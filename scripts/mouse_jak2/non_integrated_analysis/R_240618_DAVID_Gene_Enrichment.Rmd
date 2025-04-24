@@ -1,0 +1,318 @@
+---
+title: "Gene enrichment for MS_2-6 non-integrated data"
+author: "Saumya"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+  
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Markdown parameters
+set_echo = FALSE
+set_eval = FALSE
+```
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Function to set markdown text color
+colorize <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+            x)
+  } else x
+}
+```
+
+```{r, include=FALSE}
+# Set height of chunk output
+options(width = 60)
+local({
+  hook_output <- knitr::knit_hooks$get('output')
+  knitr::knit_hooks$set(output = function(x, options) {
+    if (!is.null(options$max.height)) options$attr.output <- c(
+      options$attr.output,
+      sprintf('style="max-height: %s;"', options$max.height)
+    )
+    hook_output(x, options)
+  })
+})
+```
+  
+```{r, results = FALSE, echo=set_echo, message=FALSE, warning=FALSE}
+# Load packages
+library("dplyr")
+library('AnnotationDbi')
+library("rmarkdown")
+library("RDAVIDWebService")
+library("org.Mm.eg.db")
+library("xlsx")
+library("readxl")
+library('rrvgo')
+```
+
+<!-- Information of Used Library -->
+### `r colorize('Information of Used R Libraries', 'blue')` 
+
+The following R libraries were used to process the data and produce this report.
+
+
+R: `r R.Version()$version.string`,
+
+dplyr: `r packageVersion('dplyr')`,
+
+RDAVIDWebService: `r packageVersion('RDAVIDWebService')`, 
+
+org.Hs.eg.db: `r packageVersion('org.Hs.eg.db')`, 
+
+xlsx: `r packageVersion('xlsx')`,
+
+readxl: `r packageVersion('readxl')`,
+
+rrvgo: `r packageVersion('rrvgo')`.
+
+RDAVIDWebService requires R version 4.0.
+
+```{r, echo=FALSE}
+replacENTREZID <- function(functionMatrix, mapping) {
+  for(i in 1:nrow(functionMatrix)) {
+    genelist <- trimws(strsplit(functionMatrix[i,]$Genes, ",")[[1]])
+    geneName <- mapping[match(genelist, mapping$ENTREZID), 1]
+    functionMatrix[i,]$Genes <- paste(geneName, collapse = ",")
+  }
+  return(functionMatrix)
+}
+```
+
+```{r, echo=FALSE}
+num_of_used_genes=500
+group_names = c('JAK2V617F_Hamster_IgG', 'JAK2V617F_HMb1_1')
+```
+
+```{r, echo=FALSE}
+#Function to plot results
+plotRrvgo <- function(fileName) {
+  options(java.parameters = "-Xmx8000m")
+  upFunc <- fileName
+  upFunc <- upFunc[upFunc$Category=="GOTERM_BP_DIRECT",]
+  upFunc$Category <- substring(upFunc$Term,0,10)
+  simMatrix <- calculateSimMatrix(upFunc$Category,
+                                  orgdb="org.Hs.eg.db",
+                                  ont="BP",
+                                  method="Rel")
+  scores <- setNames(-log10(as.numeric(upFunc$PValue)), upFunc$Category)
+  reducedTerms <- reduceSimMatrix(simMatrix,
+                                  scores,
+                                  threshold=0.9,
+                                  orgdb="org.Hs.eg.db")
+  
+  return(list(first=simMatrix, second=reducedTerms))
+}
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Input positive marker gene list and then take top 500 genes based on condition of interest.
+
+# Input positive marker csv file
+positive_markers <- read.csv("data_clust0_positive_markers_jak2.csv")
+
+# Split the table into two based on cluster and select top 500 genes for each
+igg <- positive_markers %>%
+  filter(cluster == "JAK2V617F_Hamster_IgG") %>%
+  slice_min(order_by = p_val, n = 500) %>%
+  dplyr::select(gene)
+
+beta1 <- positive_markers %>%
+  filter(cluster == "JAK2V617F_HMb1_1") %>%
+  slice_min(order_by = p_val, n = 500) %>%
+  dplyr::select(gene)
+
+write.csv(igg, "igg_genelist_top500.csv", row.names = FALSE, quote = FALSE)
+write.csv(beta1, "beta1_genelist_top500.csv", row.names = FALSE, quote = FALSE)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Read in IgG and Beta1 gene lists which have 500 genes based on p_value
+
+igg_genelist <- read.csv("igg_genelist_top500.csv", header = T)
+beta1_genelist <- read.csv("beta1_genelist_top500.csv", header = T)
+```
+
+## `r colorize('Input gene lists containing 500 genes for both JAK2 conditions sorted by p value', 'blue')` {.tabset}
+
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('###', "JAK2V617F_Hamster_IgG", ' \n')
+paged_table(igg_genelist)
+cat('\n \n')
+```
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('###', "JAK2V617F_HMb1_1", ' \n')
+paged_table(beta1_genelist)
+cat('\n \n')
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+david1 <- DAVIDWebService$new(email='saumyapo@bu.edu',  url="https://david.ncifcrf.gov/webservice/services/DAVIDWebService.DAVIDWebServiceHttpSoap12Endpoint/")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Get ID for each gene name (symbol) and run DAVID and store results for JAK2V617F_Hamster_IgG condition
+invisible(getIdTypes(david1))
+igg_egids <- AnnotationDbi::select(org.Mm.eg.db, igg_genelist$gene, "ENTREZID", "SYMBOL")
+igg_result <- david1$addList(igg_egids$ENTREZID, idType = "ENTREZ_GENE_ID", listName = "IgG_list", listType = "Gene")
+```
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+david2 <- DAVIDWebService$new(email='saumyapo@bu.edu',  url="https://david.ncifcrf.gov/webservice/services/DAVIDWebService.DAVIDWebServiceHttpSoap12Endpoint/")
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Get ID for each gene name (symbol) and run DAVID and store results for JAK2V617F_HMb1_1 condition
+invisible(getIdTypes(david2))
+beta1_egids <- AnnotationDbi::select(org.Mm.eg.db, beta1_genelist$gene, "ENTREZID", "SYMBOL")
+beta1_result <- david2$addList(beta1_egids$ENTREZID, idType = "ENTREZ_GENE_ID", listName = "Beta1_list", listType = "Gene")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Convert the IDs back to gene names for easier understanding for JAK2V617F_Hamster_IgG
+setAnnotationCategories(david1, c("GOTERM_BP_DIRECT", "KEGG_PATHWAY", "REACTOME_PATHWAY"))
+igg_gene_functions_df <- getFunctionalAnnotationChart(david1)
+igg_gene_functions_df <- replacENTREZID(igg_gene_functions_df, igg_egids) 
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Convert the IDs back to gene names for easier understanding for JAK2V617F_HMb1_1
+setAnnotationCategories(david2, c("GOTERM_BP_DIRECT", "KEGG_PATHWAY", "REACTOME_PATHWAY"))
+beta1_gene_functions_df <- getFunctionalAnnotationChart(david2)
+beta1_gene_functions_df <- replacENTREZID(beta1_gene_functions_df, beta1_egids) 
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Export JAK2V617F_Hamster_IgG results to xlsx
+write.xlsx2(igg_gene_functions_df, "igg_gene_functions.xlsx", row.names = FALSE)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Export JAK2V617F_HMb1_1 results to xlsx
+write.xlsx2(beta1_gene_functions_df, "beta1_gene_functions.xlsx", row.names = FALSE)
+```
+
+## `r colorize('Results for DAVID Enrichment Analysis', 'blue')` {.tabset}
+
+### Understanding output of analysis
+
+The output of the enrichment analysis is an excel file which has 13 headers and explanation on each of the headers can be found below:
+
+1. Category: The type of functional annotation. Example, GOTERM_BP_DIRECT, indicating direct Gene Ontology terms related to biological processes.
+
+2. Term: The specific GO term and its definition. For example, GO:0045944~positive regulation of transcription from RNA polymerase II promoter.
+
+3. Count: The number of genes from the input list associated with the given GO term. A higher count indicates more genes in your input list are associated with the GO term, suggesting stronger enrichment.
+
+4. X.: The combined score or enrichment score, often a measure of the statistical significance and relevance of the GO term. Higher enrichment scores indicate stronger relevance of the GO term to the input gene list. Generally, an enrichment score > 1.3 is considered significant.
+
+5. PValue: The p-value indicating the statistical significance of the enrichment of the GO term. Lower p-values suggest higher statistical significance. 
+
+6. Genes: The list of genes from the input set that are associated with the GO term. For instance, genes like Il10, Kdm6b, and Junb are associated with GO:0045944.
+
+7. List.Total: The total number of genes in the input list used for the analysis.
+
+8. Pop.Hits: The number of genes in the background population that are associated with the GO term. 
+
+9. Pop.Total: The total number of genes in the background population considered in the analysis. 
+
+10. Fold.Enrichment: The ratio of the observed frequency of the GO term in the input list to the expected frequency in the background population. It indicates how much more common the term is in the input list compared to the background. For example, 2.683442029 means the term is approximately 2.68 times more common in the input list than expected by chance. Higher fold enrichment values indicate that the GO term is more over-represented in the input list compared to the background. Generally, but a fold enrichment > 2 is typically considered noteworthy.
+
+11. Bonferroni: The p-value adjusted for multiple testing using the Bonferroni correction. It controls the family-wise error rate. The lower the number the better.
+
+12. Benjamini: The p-value adjusted for multiple testing using the Benjamini-Hochberg procedure, which controls the false discovery rate (FDR). The lower the number the better.
+
+13. FDR: The false discovery rate, another method to correct for multiple testing, showing the expected proportion of false positives among the significant results. The lower the number the better.
+
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('###', "JAK2V617F_Hamster_IgG", ' \n')
+paged_table(igg_gene_functions_df)
+cat(' \n \n')
+cat('###', "JAK2V617F_HMb1_1", ' \n')
+paged_table(beta1_gene_functions_df)
+cat(' \n \n')
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+igg_plot = plotRrvgo(igg_gene_functions_df)
+beta1_plot = plotRrvgo(beta1_gene_functions_df)
+```
+
+## `r colorize('Plotting Gene Enrichment results using treemap and scatterplot', 'blue')` {.tabset}
+### JAK2V617F_Hamster_IgG {.tabset}
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('####', "treemapPlot", ' \n')
+treemapPlot(igg_plot$second)
+cat(' \n \n')
+cat('####', "scatterPlot", ' \n')
+print(scatterPlot(igg_plot$first, igg_plot$second))
+cat(' \n \n')
+```  
+### JAK2V617F_HMb1_1 {.tabset}
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('####', "treemapPlot", ' \n')
+treemapPlot(beta1_plot$second)
+cat(' \n \n')
+cat('####', "scatterPlot", ' \n')
+print(scatterPlot(beta1_plot$first, beta1_plot$second))
+cat(' \n \n')  
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Read IgG DAVID results
+igg_david <- read_excel("igg_gene_functions.xlsx")
+# Filter for top 10 pathways based on P-value
+top_igg_results <- igg_david %>%
+  arrange(PValue) %>%
+  head(10)
+
+# Create a horizontal bar plot of top 10 enriched pathways
+plot_top_igg_pathways <- ggplot(top_igg_results, aes(x = reorder(Term, -PValue), y = -log10(PValue))) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  coord_flip() +
+  labs(title = "Top 10 Pathways JAK2V617F_Hamster_IgG DAVID", x = "Pathway", y = "-log10(P-value)") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 6))
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Read Beta1 DAVID results
+beta1_david <- read_excel("beta1_gene_functions.xlsx")
+# Filter for top 10 pathways based on P-value
+top_beta1_results <- beta1_david %>%
+  arrange(PValue) %>%
+  head(10)
+
+# Create a horizontal bar plot of top 10 enriched pathways
+plot_top_beta1_pathways <- ggplot(top_beta1_results, aes(x = reorder(Term, -PValue), y = -log10(PValue))) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  coord_flip() +
+  labs(title = "Top 10 Pathways JAK2V617F_HMb1_1 DAVID", x = "Pathway", y = "-log10(P-value)") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 6))
+```
+
+
+## `r colorize('Pathway Plot of Top 10 pathways based on p-value', 'blue')` {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE,fig.width=10,fig.height=6}
+# Display DAVID barplots
+cat('###', "JAK2V617F_Hamster_IgG", ' \n')
+print(plot_top_igg_pathways)
+cat(' \n \n')
+cat('###', "JAK2V617F_HMb1_1", ' \n')
+print(plot_top_beta1_pathways)
+cat(' \n \n')
+```

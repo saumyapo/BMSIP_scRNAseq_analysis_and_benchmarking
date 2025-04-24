@@ -1,0 +1,782 @@
+---
+title: "Clustering for MS_2-6 integrated data"
+author: "K4"
+date: "10/06/2024"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Markdown parameters
+set_echo = FALSE
+set_eval = FALSE
+```
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Function to set markdown text color
+colorize <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+      x)
+  } else x
+}
+```
+
+
+```{r, include=FALSE}
+# Set height of chunk output
+options(width = 60)
+local({
+  hook_output <- knitr::knit_hooks$get('output')
+  knitr::knit_hooks$set(output = function(x, options) {
+    if (!is.null(options$max.height)) options$attr.output <- c(
+      options$attr.output,
+      sprintf('style="max-height: %s;"', options$max.height)
+    )
+    hook_output(x, options)
+  })
+})
+```
+
+```{r, results = FALSE, echo=set_echo, message=FALSE, warning=FALSE}
+# Load packages
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(cowplot)
+library(rmarkdown)
+library(celldex)
+library(SummarizedExperiment)
+```
+
+<!-- Information of Used Library -->
+### `r colorize('Information of Used R Libraries', 'blue')` 
+
+The following R libraries were used to process the data and produce this report.
+
+R: `r R.Version()$version.string`,
+
+dplyr: `r packageVersion('dplyr')`, 
+
+Seurat: `r packageVersion('Seurat')`, 
+
+patchwork: `r packageVersion('patchwork')`, 
+
+ggplot2: `r packageVersion('ggplot2')`, 
+
+cowplot: `r packageVersion('cowplot')`,
+
+celldex: `r packageVersion('celldex')`
+
+```{r, echo=FALSE}
+# Useful string constant
+suffix <- "Seurat"
+sampleNames <- c("MS_2", "MS_3", "MS_4", "MS_5", "MS_6")
+sample_Names_cp = gsub("_", "-", sampleNames)
+rawDataDir_1 <- "/projectnb/czlab/A03_Shinubo/Data/202305_JAK2_10X/"
+rawDataDir_2 <- "/outs/filtered_feature_bc_matrix"
+projectName <- "MS_2-6"
+
+# Seurat parameters
+variable.features <- 2000
+nPCs <- 50
+```
+
+
+```{r, eval=set_eval, echo=FALSE}
+
+# Load integrated umap data
+data.combined <- readRDS("data_Integrated_5_samples_umap.RDS")
+
+DefaultAssay(data.combined) <- "integrated"
+
+# check integrated umap
+DimPlot(data.combined, reduction = "umap", group.by = "sample", raster=FALSE,pt.size =0.001)
+```
+
+
+# `r colorize('Clustering Step 1: Clustering', 'blue')`  
+
+In this step, we do the clustering of the single cell RNA-seq data.
+
+
+```{r, eval=set_eval, echo=FALSE}
+data.combined <- FindNeighbors(data.combined, reduction = "pca", dims = 1:50)
+```
+```{r, eval=set_eval, echo=FALSE}
+# Do clustering
+data.combined <- FindClusters(data.combined, resolution = 0.13)
+```
+
+```{r, eval = set_eval, echo=FALSE}
+# Save clustering data
+saveRDS(data.combined, file = paste("data_Integrated_5_samples_9_clusters.RDS") )
+```
+
+```{r, eval=set_eval, echo=FALSE}
+data.combined <- readRDS("data_Integrated_5_samples_9_clusters.RDS")
+# Check clustering UMAP
+DimPlot(data.combined, reduction = "umap", label = TRUE, repel = TRUE, raster=FALSE)
+```
+
+
+
+
+
+```{r, echo=FALSE}
+# Load clustering data
+data.combined <- readRDS("data_Integrated_5_samples_9_clusters.RDS")
+```
+
+
+```{r, eval = set_eval, echo=FALSE}
+# Save data to CSV to do annotation
+
+#expr_matrix <- data.combined$integrated@scale.data
+
+expr_matrix <- data.combined$RNA@counts
+
+clusters = data.combined@meta.data$seurat_clusters
+
+write.csv(expr_matrix, "data_expr_matrix.csv") 
+
+write.csv(clusters, "data_clusters.csv",col.names=FALSE)
+
+```
+
+```{r, eval = set_eval, echo=FALSE, message=FALSE, warning=FALSE}
+# Clustering PDF: plot and save UMAP of clusters as pdf
+pdf(paste("pdf_clustering_9.pdf"), width=10, height=8, useDingbats = FALSE)
+DimPlot(data.combined, reduction = "umap", label = TRUE, repel = TRUE, raster=FALSE) + ggtitle('All Samples')
+for (sample_mp in sample_Names_cp) {
+  print(DimPlot(subset(data.combined,subset = (sample %in% c(sample_mp))),reduction = "umap",
+                label = TRUE, repel = TRUE, raster=FALSE) + ggtitle(sample))
+}
+dev.off()
+```
+
+## Plot of 9 clusters  {.tabset}
+
+You can click the tabs below to check the UMAP plots for all of 5 samples one by one. The total number of clusters for all samples is 9. 
+
+```{r,results='asis', echo=FALSE}
+
+cluster_labels <- c("0" = "Cluster 0",
+                    "1" = "Cluster 1",
+                    "2" = "Cluster 2",
+                    "3" = ">10% Mito",
+                    "4" = "Cluster 4",
+                    "5" = "Cluster 5",
+                    "6" = "Cluster 6",
+                    "7" = "Cluster 7",
+                    "8" = "Cluster 8")
+
+
+# This step maps the cluster numbers to your custom labels
+data.combined$cluster_label <- plyr::mapvalues(Idents(data.combined), from = names(cluster_labels), to = cluster_labels)
+
+# Update the identities to use the new labels
+Idents(data.combined) <- data.combined$cluster_label
+
+# Plot the UMAP with the custom labels
+cat('###',"All samples",' \n')
+DimPlot(data.combined, reduction = "umap", label = TRUE, repel = TRUE, raster=FALSE) + ggtitle('All Samples')
+cat(' \n \n')
+
+for (sample in sample_Names_cp) {
+  cat('###',sample,' \n')
+  print(DimPlot(subset(data.combined, subset = (group %in% c(sample))), reduction = "umap",
+                label = TRUE, repel = TRUE, raster=FALSE) + ggtitle(sample))
+  cat(' \n \n')
+}
+```
+
+# `r colorize('Mitochondrial genes above 10%', 'blue')` {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+data.combined <- readRDS("data_Integrated_5_samples_9_clusters.RDS") 
+cat('##','All samples',' \n')
+DimPlot(data.combined, reduction = "umap", group.by= 'mt_label' ) + ggtitle('All Samples')
+cat(' \n \n')
+
+for (samp in sample_Names_cp) {
+  cat('##',samp,' \n')
+  print(DimPlot(subset(data.combined, subset = (sample %in% c(samp))), group.by= 'mt_label', reduction = "umap") + ggtitle(samp))
+  cat(' \n \n')
+}
+```
+# `r colorize('Comparison with previous top 30 markers', 'blue')`
+This section is to compare the previous positive and negative top 30 markers obtained in the previous 7 clusters with the new clustering which has 9 clusters.
+
+## Previous top 30 up-regulated markers for each cluster
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+markers_clst = read.csv('data_cluster_markers_for_7_clusters_Positive_new.csv')
+markers_clst = markers_clst %>% group_by(cluster) %>% slice_max(n = 30, order_by = pct.diff)
+paged_table(markers_clst)
+```
+
+## Previous top 30 down-regulated markers for each cluster
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+markers_clst = read.csv('data_cluster_markers_for_7_clusters_Negative_new.csv')
+markers_clst = markers_clst %>% group_by(cluster) %>% slice_min(n = 30, order_by = pct.diff)
+paged_table(markers_clst)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+positive.markers = read.csv('data_cluster_markers_for_7_clusters_Positive_new.csv')
+negative.markers = read.csv('data_cluster_markers_for_7_clusters_Negative_new.csv')
+```
+
+# `r colorize('Plot top 30 up-regulated markers for previous cluster-0 on new clustering', 'blue')`  {.tabset}
+We select the top 30 markers according to pct.diff values.
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+
+#data.combined <- readRDS("data_Integrated_5_samples_9_clusters.RDS")
+markers_single_clst <- positive.markers[positive.markers$cluster == '0',]
+markers_list=markers_single_clst$gene[1:30]
+
+DefaultAssay(data.combined) <- "RNA"
+for (feature in markers_list) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA"))
+  cat(' \n \n')
+}
+```
+
+
+
+# `r colorize('Plot top 30 down-regulated markers for previous cluster-0 on new clustering', 'blue')`  {.tabset}
+We select the top 30 markers according to pct.diff values.
+
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+markers_single_clst <- negative.markers[negative.markers$cluster == '0',]
+markers_list=markers_single_clst$gene[1:30]
+
+DefaultAssay(data.combined) <- "RNA"
+for (feature in markers_list) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA"))
+  cat(' \n \n')
+}
+```
+
+# `r colorize('Plot top 30 up-regulated markers for previous cluster-1 on new clustering', 'blue')`  {.tabset}
+We select the top 30 markers according to pct.diff values.
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+
+data.combined <- readRDS("data_Integrated_5_samples_9_clusters.RDS")
+markers_single_clst <- positive.markers[positive.markers$cluster == '1',]
+markers_list=markers_single_clst$gene[1:30]
+
+DefaultAssay(data.combined) <- "RNA"
+for (feature in markers_list) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA"))
+  cat(' \n \n')
+}
+```
+
+
+
+# `r colorize('Plot top 30 down-regulated markers for previous cluster-1 on new clustering', 'blue')`  {.tabset}
+We select the top 30 markers according to pct.diff values.
+
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+markers_single_clst <- negative.markers[negative.markers$cluster == '1',]
+markers_list=markers_single_clst$gene[1:30]
+
+DefaultAssay(data.combined) <- "RNA"
+for (feature in markers_list) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA"))
+  cat(' \n \n')
+}
+```
+
+# `r colorize('Plot top 30 up-regulated markers for previous cluster-2 on new clustering', 'blue')`  {.tabset}
+We select the top 30 markers according to pct.diff values.
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+
+data.combined <- readRDS("data_Integrated_5_samples_9_clusters.RDS")
+markers_single_clst <- positive.markers[positive.markers$cluster == '2',]
+markers_list=markers_single_clst$gene[1:30]
+
+DefaultAssay(data.combined) <- "RNA"
+for (feature in markers_list) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA"))
+  cat(' \n \n')
+}
+```
+
+
+
+# `r colorize('Plot top 30 down-regulated markers for previous cluster-2 on new clustering', 'blue')`  {.tabset}
+We select the top 30 markers according to pct.diff values.
+
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+markers_single_clst <- negative.markers[negative.markers$cluster == '2',]
+markers_list=markers_single_clst$gene[1:30]
+
+DefaultAssay(data.combined) <- "RNA"
+for (feature in markers_list) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA"))
+  cat(' \n \n')
+}
+```
+
+# `r colorize('Plot top 30 up-regulated markers for previous cluster-3 on new clustering', 'blue')`  {.tabset}
+We select the top 30 markers according to pct.diff values.
+
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+markers_single_clst <- positive.markers[positive.markers$cluster == '3',]
+markers_list=markers_single_clst$gene[1:30]
+
+DefaultAssay(data.combined) <- "RNA"
+for (feature in markers_list) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA"))
+  cat(' \n \n')
+}
+```
+
+
+
+# `r colorize('Plot top 30 down-regulated markers for previous cluster-3 on new clustering', 'blue')`  {.tabset}
+We select the top 30 markers according to pct.diff values.
+
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+markers_single_clst <- negative.markers[negative.markers$cluster == '3',]
+markers_list=markers_single_clst$gene[1:30]
+
+DefaultAssay(data.combined) <- "RNA"
+for (feature in markers_list) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA"))
+  cat(' \n \n')
+}
+```
+
+# `r colorize('Plot top 30 up-regulated markers for previous cluster-4 on new clustering', 'blue')`  {.tabset}
+We select the top 30 markers according to pct.diff values.
+
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+markers_single_clst <- positive.markers[positive.markers$cluster == '4',]
+markers_list=markers_single_clst$gene[1:30]
+
+DefaultAssay(data.combined) <- "RNA"
+for (feature in markers_list) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA"))
+  cat(' \n \n')
+}
+```
+
+
+
+# `r colorize('Plot top 30 down-regulated markers for previous cluster-4 on new clustering', 'blue')`  {.tabset}
+We select the top 30 markers according to pct.diff values.
+
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+markers_single_clst <- negative.markers[negative.markers$cluster == '4',]
+markers_list=markers_single_clst$gene[1:30]
+
+DefaultAssay(data.combined) <- "RNA"
+for (feature in markers_list) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA"))
+  cat(' \n \n')
+}
+```
+
+
+# `r colorize('Plot top 30 up-regulated markers for previous cluster-5 on new clustering', 'blue')`  {.tabset}
+We select the top 30 markers according to pct.diff values.
+
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+markers_single_clst <- positive.markers[positive.markers$cluster == '5',]
+markers_list=markers_single_clst$gene[1:30]
+
+DefaultAssay(data.combined) <- "RNA"
+for (feature in markers_list) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA"))
+  cat(' \n \n')
+}
+```
+
+
+
+# `r colorize('Plot top 30 down-regulated markers for previous cluster-5 on new clustering', 'blue')`  {.tabset}
+We select the top 30 markers according to pct.diff values.
+
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+markers_single_clst <- negative.markers[negative.markers$cluster == '5',]
+markers_list=markers_single_clst$gene[1:30]
+
+DefaultAssay(data.combined) <- "RNA"
+for (feature in markers_list) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA"))
+  cat(' \n \n')
+}
+```
+
+
+# `r colorize('Plot top 30 up-regulated markers for previous cluster-6 on new clustering', 'blue')`  {.tabset}
+We select the top 30 markers according to pct.diff values.
+
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+markers_single_clst <- positive.markers[positive.markers$cluster == '6',]
+markers_list=markers_single_clst$gene[1:30]
+
+DefaultAssay(data.combined) <- "RNA"
+for (feature in markers_list) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA"))
+  cat(' \n \n')
+}
+```
+
+
+
+# `r colorize('Plot top 30 down-regulated markers for previous cluster-6 on new clustering', 'blue')`  {.tabset}
+We select the top 30 markers according to pct.diff values.
+
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+markers_single_clst <- negative.markers[negative.markers$cluster == '6',]
+markers_list=markers_single_clst$gene[1:30]
+
+DefaultAssay(data.combined) <- "RNA"
+for (feature in markers_list) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA"))
+  cat(' \n \n')
+}
+```
+
+<!-- # `r colorize('Clustering Step 2: Find Markers', 'blue')` -->
+
+<!-- Find markers for every cluster compared to all remaining cells, report both positive and negative ones. You can check the top 20 markers(selected based on the largest values of avg_log2FC or pct.ratio) and also all markers for each cluster on the following data table. The results data frame has the following columns: -->
+
+<!-- * cluster: cluster label. -->
+<!-- * gene: gene name -->
+<!-- * p_val: p value (unadjusted) can take any value between 0 and 1. Values close to 0 indicate that the observed gene expression difference between the cluster and the rest clusters is unlikely to be due to chance, whereas a p value close to 1 suggests no difference between the cluster and the rest clusters other than due to chance. -->
+<!-- * avg_log2FC: log fold-change of the average expression between the cluster and the rest clusters. Positive values indicate that the gene is more highly expressed in the cluster. -->
+<!-- * pct.1: The percentage of cells where the gene is detected in the cluster. -->
+<!-- * pct.2: The percentage of cells where the gene is detected in the rest clusters. -->
+<!-- * p_val_adj: Adjusted p value, based on Bonferroni correction using all genes in the dataset. -->
+<!-- * pct.ratio: The ratio between pct.1 and pct.2. -->
+
+
+
+<!-- ```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- # Find All Markers -->
+<!-- DefaultAssay(data.combined) <- "RNA" -->
+<!-- data.markers <- FindAllMarkers(data.combined, only.pos = FALSE, min.pct = 0.25, logfc.threshold = 0.25) -->
+<!-- # Save markers -->
+<!-- write.csv(data.markers, file='data_all_markers_for_9_clusters.csv') -->
+<!-- ``` -->
+
+<!-- ```{r, echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- # Read Markers .csv -->
+<!-- data.markers = read.csv('data_all_markers_for_9_clusters.csv') -->
+<!-- data.markers$pct.diff = data.markers$pct.1 - data.markers$pct.2 -->
+<!-- data.markers$pct.ratio = data.markers$pct.1 / data.markers$pct.2 -->
+<!-- avglog_p = data.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = avg_log2FC) -->
+<!-- avglog_n = data.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = avg_log2FC) -->
+<!-- pctdiff_p = data.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = pct.diff) -->
+<!-- pctdiff_n = data.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = pct.diff) -->
+<!-- pctratio_p = data.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = pct.ratio) -->
+<!-- pctratio_n = data.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = pct.ratio) -->
+<!-- ``` -->
+
+
+
+
+<!-- ```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE} -->
+
+<!-- positive.markers = read.csv('data_all_markers_for_9_clusters.csv') -->
+
+<!-- positive.markers$pct.diff = positive.markers$pct.1 - positive.markers$pct.2 -->
+<!-- positive.markers$pct.ratio = positive.markers$pct.1 / positive.markers$pct.2 -->
+
+<!-- # Keep positive markers only -->
+<!-- positive.markers <- positive.markers[positive.markers$pct.diff > 0.0,] -->
+
+<!-- positive.markers = positive.markers %>% group_by(cluster) %>% slice_max(n = 200, order_by = pct.diff) -->
+
+
+<!-- write.csv(positive.markers, file='data_positive_markers_for_9_clusters.csv') -->
+
+<!-- ``` -->
+
+
+
+<!-- ```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- paged_table(positive.markers) -->
+<!-- ``` -->
+
+
+
+<!-- ## Positive markers {.tabset} -->
+
+<!-- ```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- cat('###',"Top 20 Markers (avg_log2FC)",' \n') -->
+<!-- paged_table(avglog_p) -->
+<!-- cat(' \n \n') -->
+<!-- cat('###',"Top 20 Markers (pct.diff)",' \n') -->
+<!-- paged_table(pctdiff_p) -->
+<!-- cat(' \n \n') -->
+<!-- cat('###',"Top 20 Markers (pct.ratio)",' \n') -->
+<!-- paged_table(pctratio_p) -->
+<!-- cat(' \n \n') -->
+
+<!-- ``` -->
+
+
+<!-- ## Negative markers {.tabset} -->
+
+<!-- ```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- cat('###',"Top 20 Markers (avg_log2FC)",' \n') -->
+<!-- paged_table(avglog_n) -->
+<!-- cat(' \n \n') -->
+<!-- cat('###',"Top 20 Markers (pct.diff)",' \n') -->
+<!-- paged_table(pctdiff_n) -->
+<!-- cat(' \n \n') -->
+<!-- cat('###',"Top 20 Markers (pct.ratio)",' \n') -->
+<!-- paged_table(pctratio_n) -->
+<!-- cat(' \n \n') -->
+
+<!-- ``` -->
+
+
+<!-- ## All markers -->
+
+<!-- ```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- paged_table(data.markers) -->
+<!-- ``` -->
+
+
+
+<!-- # `r colorize('Clustering Step 3: Plot Markers', 'blue')`  -->
+
+<!-- Could you please recognize the most accurate markers for each clusters according to the above mark gene list and give us the feedback about the markers you want to check? We can start to plot the UMAP of mark gene expressions once we get the feedback markers. The following are some examples about the plots of markers. -->
+
+<!-- ```{r,  eval=set_eval, echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- mpp.markers = read.csv('mpp_markers.csv') -->
+
+<!-- mpp.markers = head(mpp.markers, 100) -->
+
+<!-- str(mpp.markers) -->
+
+
+
+<!-- data.markers <- data.markers[data.markers$avg_log2FC > 0.0,]  -->
+
+<!-- cluster_marker_p = data.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = pct.diff) -->
+
+
+<!-- ``` -->
+
+
+<!-- # ```{r, eval=set_eval, echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- # marker = cluster_marker_p[cluster_marker_p$cluster=='2',] -->
+<!-- # marker = marker$gene -->
+<!-- # str(marker) -->
+<!-- #  -->
+<!-- # mpp_s = mpp.markers$MPP2 -->
+<!-- #  -->
+<!-- # common_elements <- intersect(marker, mpp_s) -->
+<!-- #  -->
+<!-- # common_elements_list <- c(common_elements) -->
+<!-- #  -->
+<!-- # str(common_elements_list) -->
+<!-- #  -->
+<!-- # ``` -->
+
+
+ <!-- ```{r, eval=set_eval, echo=FALSE, message=FALSE, warning=FALSE} -->
+ <!-- # PDF marker plot -->
+ <!-- pdf(paste("pdf_markers_plot_11.pdf"), width=10, height=8, useDingbats = FALSE) -->
+ <!-- FeaturePlot(data.combined, features = Feature_plot,raster=FALSE) -->
+ <!-- for (feature in Feature_plot) { -->
+ <!--   print(FeaturePlot(data.combined, features = c(feature),raster=FALSE)) -->
+ <!-- } -->
+ <!-- dev.off() -->
+ <!-- ``` -->
+
+<!-- ## UMAP plot of markers {.tabset} -->
+<!-- The following images are the UMAP plots of markers for different clusters. -->
+
+<!-- ```{r, results='asis', echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- Feature_plot = c("Sult1a1", "Ltb", "Gmnn", "Lig1") -->
+<!-- for (feature in Feature_plot) { -->
+<!--   cat('###',feature,' \n') -->
+<!--   print(FeaturePlot(data.combined, features = c(feature),raster=FALSE)) -->
+<!--   cat(' \n \n') -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- ## Violin plot of markers {.tabset} -->
+
+<!-- The following images are the violin plots of markers for different clusters. -->
+
+<!-- ```{r, results='asis', echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- for (feature in Feature_plot) { -->
+<!--   cat('###',feature,' \n') -->
+<!--   print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0)) -->
+<!--   cat(' \n \n') -->
+<!-- } -->
+<!-- ``` -->
+
+
+
+<!-- ## UMAP plot of Sult1a1 expression {.tabset} -->
+
+<!-- The following images are the UMAP plots of gene Sult1a1 over different samples. -->
+
+<!-- ```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- cat('###',"All samples",' \n') -->
+<!-- print(FeaturePlot(data.combined, features = c("Sult1a1"),raster=FALSE)) -->
+<!-- cat(' \n \n') -->
+<!-- for (sample in sample_Names_cp) { -->
+<!--   cat('###',sample,' \n') -->
+<!--   print(FeaturePlot(subset(data.combined,subset = (group %in% c(sample))), features = c("Sult1a1"),raster=FALSE)) -->
+<!--   cat(' \n \n') -->
+<!-- } -->
+<!-- ``` -->
+
+    
+
+<!-- # `r colorize('Clustering Step 4: Cluster Annotation', 'blue')` {.tabset} -->
+
+<!-- Could you please check the markers for each cluster and identify the cell types of all clusters? We will use cell types as annotations for different clusters. Annotations will be added to the UMAP plot of clusters. -->
+
+
+# `r colorize('Clustering: Count percentage of cells in each cluster', 'blue')` 
+
+We here count the percentage of cells in each cluster and plot it. The percentage of cells in each cluster is calculated sample by sample and also group by group.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+group_names = c('JAK2V617F_HMb1_1', 'JAK2V617F_Hamster_IgG', 'C57BL6J_HMb1_1', 'C57BL6J_Hamster_IgG')
+
+countsBySample <- data.frame(unclass(table(data.combined@active.ident, data.combined@meta.data$group)))
+countsBySample$JAK2V617F_HMb1_1 <- countsBySample$MS.2 
+countsBySample$JAK2V617F_Hamster_IgG <- countsBySample$MS.5
+countsBySample$C57BL6J_HMb1_1 <- countsBySample$MS.4 + countsBySample$MS.6
+countsBySample$C57BL6J_Hamster_IgG <- countsBySample$MS.3
+
+perBySample <- t(t(countsBySample)/colSums(countsBySample))
+```
+
+## Table of percentage of cells in each cluster. 
+
+The row index is cluster and the column header is sample name. All samples can be split into two groups "JAK2V617F" and "C57BL6J", where "JAK2V617F" contains the set of samples {MS-2, MS-5}, and "C57BL6J" contains the set of samples {MS-3, MS-4, MS-6}.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+mmm = data.frame(perBySample)
+paged_table(mmm)
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+color5 = c("skyblue1","skyblue3", "gold", "orange", "orange4")
+
+sample5 = gsub("_", "-", c("MS_2", "MS_5", "MS_3", "MS_4", "MS_6"))
+```
+
+
+## Plot percentage of cells {.tabset}
+
+### All Samples
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+par(mar=c(2, 8, 1, 2))
+barplot(t(perBySample[,c(1,4,2,3,5)]), beside = T, col=color5, horiz = T, las = 1, xlim=c(0,0.8))
+legend("bottomright", legend = sample5, box.lty=0, inset=c(0,0.5), col=color5, fill=color5)
+# barplot(t(perBySample[,c(2,4)]), beside = T, col=c("lightblue", "orange"), horiz = T, las = 1, xlim=c(0,0.5))
+# legend("bottomright", legend = c("LN", "RN"), box.lty=0, inset=c(0,0.1), col=c("lightblue", "orange"), fill=c("lightblue", "orange"))
+```
+
+
+### Four Groups
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+par(mar=c(2, 8, 1, 2))
+barplot(t(perBySample[,c(6,7,8,9)]), beside = T, col=c("skyblue1","skyblue3", "gold", "orange"), horiz = T, las = 1, xlim=c(0,0.7))
+legend("bottomright", legend = c('JAK2V617F_HMb1_1', 'JAK2V617F_Hamster_IgG', 'C57BL6J_HMb1_1', 'C57BL6J_Hamster_IgG'), box.lty=0, inset=c(0,0.5), col=c("skyblue1","skyblue3", "gold", "orange"), fill=c("skyblue1","skyblue3", "gold", "orange"))
+```
+
+
+<!-- ### JAK2V617F -->
+
+<!-- ```{r, echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- par(mar=c(2, 8, 1, 2)) -->
+<!-- barplot(t(perBySample[,c(6,7)]), beside = T, col=c("skyblue1", "orange"), horiz = T, las = 1, xlim=c(0,0.6)) -->
+<!-- legend("bottomright", legend = c('JAK2V617F_HMb1_1', 'JAK2V617F_Hamster_IgG'), box.lty=0, inset=c(0,0.5), col=c("skyblue1", "orange"), fill=c("skyblue1", "orange")) -->
+<!-- ``` -->
+
+
+<!-- ### C57BL6J -->
+
+<!-- ```{r, echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- par(mar=c(2, 8, 1, 2)) -->
+<!-- barplot(t(perBySample[,c(8,9)]), beside = T, col=c("skyblue1", "orange"), horiz = T, las = 1, xlim=c(0,0.7)) -->
+<!-- legend("bottomright", legend = c('C57BL6J_HMb1_1', 'C57BL6J_Hamster_IgG'), box.lty=0, inset=c(0,0.5), col=c("skyblue1", "orange"), fill=c("skyblue1", "orange")) -->
+<!-- ``` -->
+
+
+<!-- ### HMb1_1 -->
+
+<!-- ```{r, echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- par(mar=c(2, 8, 1, 2)) -->
+<!-- barplot(t(perBySample[,c(6,8)]), beside = T, col=c("skyblue1", "orange"), horiz = T, las = 1, xlim=c(0,0.7)) -->
+<!-- legend("bottomright", legend = c('JAK2V617F_HMb1_1','C57BL6J_HMb1_1'), box.lty=0, inset=c(0,0.5), col=c("skyblue1", "orange"), fill=c("skyblue1", "orange")) -->
+<!-- ``` -->
+
+
+<!-- ### Hamster_IgG -->
+
+<!-- ```{r, echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- par(mar=c(2, 8, 1, 2)) -->
+<!-- barplot(t(perBySample[,c(7,9)]), beside = T, col=c("skyblue1", "orange"), horiz = T, las = 1, xlim=c(0,0.7)) -->
+<!-- legend("bottomright", legend = c('JAK2V617F_Hamster_IgG','C57BL6J_Hamster_IgG'), box.lty=0, inset=c(0,0.5), col=c("skyblue1", "orange"), fill=c("skyblue1", "orange")) -->
+<!-- ``` -->
+
+
+

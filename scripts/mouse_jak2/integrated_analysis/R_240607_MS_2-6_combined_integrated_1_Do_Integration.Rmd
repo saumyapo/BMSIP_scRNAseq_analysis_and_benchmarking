@@ -1,0 +1,216 @@
+---
+title: 'MS_2-6 integrated data step1: Do integration'
+author: "K4"
+date: "06/07/2024"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Markdown parameters
+set_echo = FALSE
+set_eval = FALSE
+```
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Function to set markdown text color
+colorize <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+      x)
+  } else x
+}
+```
+
+
+```{r, include=FALSE}
+# Set height of chunk output
+options(width = 60)
+local({
+  hook_output <- knitr::knit_hooks$get('output')
+  knitr::knit_hooks$set(output = function(x, options) {
+    if (!is.null(options$max.height)) options$attr.output <- c(
+      options$attr.output,
+      sprintf('style="max-height: %s;"', options$max.height)
+    )
+    hook_output(x, options)
+  })
+})
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Load packages
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(cowplot)
+library(rmarkdown)
+```
+<!-- Information of Used Library -->
+### `r colorize('Information of Used R Libraries', 'blue')` 
+
+The following R libraries were used to process the data and produce this report.
+
+R: `r R.Version()$version.string`,
+
+dplyr: `r packageVersion('dplyr')`, 
+
+Seurat: `r packageVersion('Seurat')`, 
+
+patchwork: `r packageVersion('patchwork')`, 
+
+ggplot2: `r packageVersion('ggplot2')`, 
+
+cowplot: `r packageVersion('cowplot')`.
+
+
+```{r, echo=FALSE}
+# Useful string constant
+suffix <- "Seurat"
+sampleNames <- c("MS_2", "MS_3", "MS_4", "MS_5", "MS_6")
+sample_Names_cp = gsub("_", "-", sampleNames)
+rawDataDir_1 <- "/projectnb/czlab/A03_Shinubo/Data/202305_JAK2_10X/"
+rawDataDir_2 <- "/outs/filtered_feature_bc_matrix"
+projectName <- "MS_2-6"
+
+# Seurat parameters
+variable.features <- 2000
+nPCs <- 50
+```
+
+### `r colorize('Note', 'blue')` 
+
+
+```{r, eval = set_eval, echo=FALSE}
+# Load raw data
+data <- readRDS("data_raw_umap.RDS")
+data$group <- data@meta.data$orig.ident
+
+# split the dataset into a list of two seurat objects (stim and CTRL)
+data.list = SplitObject(data, split.by = "ident")
+
+# normalize and identify variable features for each dataset independently
+data.list <- lapply(X = data.list, FUN = function(x) {
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = data.list)
+```
+
+
+
+```{r, eval = set_eval, echo=FALSE}
+# Perform integration
+# We then identify anchors using the FindIntegrationAnchors() function, which takes a list 
+# of Seurat objects as input, and use these anchors to integrate the two datasets together with IntegrateData().
+data.anchors <- FindIntegrationAnchors(object.list = data.list, anchor.features = features)
+
+# this command creates an 'integrated' data assay
+data.combined <- IntegrateData(anchorset = data.anchors)
+
+# Save raw data
+saveRDS(data.combined, file = paste("data_Integrated_5_samples.RDS") )
+```
+
+
+
+```{r, eval = set_eval, echo=FALSE}
+# Load raw data
+data.combined <- readRDS("data_Integrated_5_samples.RDS")
+```
+
+
+```{r, eval = set_eval, echo=FALSE}
+# Run the standard workflow for visualization and clustering
+data.combined <- ScaleData(data.combined, verbose = FALSE)
+data.combined <- RunPCA(data.combined, npcs = 50, verbose = FALSE)
+data.combined <- RunUMAP(data.combined, reduction = "pca", dims = 1:50)
+
+# Save integrated data
+saveRDS(data.combined, file = paste("data_Integrated_5_samples_umap.RDS") )
+```
+
+
+# `r colorize('UMAP for different samples before integration', 'blue')` {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+# Load non-integrated data
+data.bf <- readRDS("data_raw_umap.RDS")
+
+cat('##','All samples',' \n')
+DimPlot(data.bf, reduction = "umap", group.by= 'sample' ) + ggtitle('All Samples')
+cat(' \n \n')
+
+for (samp in sample_Names_cp) {
+  cat('##',samp,' \n')
+  print(DimPlot(subset(data.bf, subset = (sample %in% c(samp))), reduction = "umap") + ggtitle(samp))
+  cat(' \n \n')
+}
+```
+
+
+```{r, echo=FALSE}
+# Load integrated data
+data.combined <- readRDS("data_Integrated_5_samples_umap.RDS")
+```
+
+# `r colorize('UMAP for different samples after integration', 'blue')` {.tabset}
+
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('##','All samples',' \n')
+DimPlot(data.combined, reduction = "umap", group.by= 'group' ) + ggtitle('All Samples')
+cat(' \n \n')
+for (sample in sample_Names_cp) {
+  cat('##',sample,' \n')
+  print(DimPlot(subset(data.combined, subset = (group %in% c(sample))), reduction = "umap", group.by= 'group' ) + ggtitle(sample))
+  cat(' \n \n')
+}
+```
+
+```{r, eval = set_eval, echo=FALSE}
+# Plot and save integrated umap 
+pdf(paste("Integrated_5_samples_umap.pdf"), width=10, height=8, useDingbats = FALSE)
+DimPlot(data.combined, reduction = "umap", group.by = "group")
+for (sample in sample_Names_cp) {
+  print(DimPlot(subset(data.combined,subset = (group %in% c(sample))),reduction = "umap",group.by = "group"))
+}
+dev.off()
+```
+# `r colorize('Mk-primed gene set after integration (Rodriguez-Fraticelli et al., 2018a)', 'blue')` {.tabset}
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library("xlsx")
+# ###Fourteen_clst_markers = read.xlsx('shinobu_2023-03-02_trial_run_analysis.xlsx', sheetIndex = 1)
+MK_markers = read.xlsx('shinobu_TableS2_GSA_gene_set-2.xlsx', sheetIndex = 'Table S2A')
+
+library('stringr')
+
+MK_markers_selected = str_to_title(MK_markers$A)
+
+gene_names <- rownames(data.combined)
+
+mask <- MK_markers_selected %in% gene_names
+gene_selected = MK_markers_selected[mask]
+
+```
+
+```{r, echo=FALSE, results='asis', message=FALSE, warning=FALSE}
+data.combined <- readRDS("data_Integrated_5_samples_umap.RDS")
+DefaultAssay(data.combined) <- "RNA"
+for (feature in gene_selected) {
+  cat('##',feature,' \n')
+  print(FeaturePlot(data.combined, features = c(feature),raster=FALSE, slot = "data"))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA",
+                group.by='nFeature_label')+ggtitle(paste(feature, '/ nFeature')))
+  print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0,  assay = "RNA", 
+                group.by='nRead_label')+ggtitle(paste(feature, '/ nRead')))
+  cat(' \n \n')
+}
+```

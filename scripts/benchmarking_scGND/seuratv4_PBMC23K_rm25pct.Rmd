@@ -1,0 +1,233 @@
+---
+title: 'PBMC23K_rm25pct Seurat V4 Integration'
+author: "Saumya"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Markdown parameters
+set_echo = FALSE
+set_eval = FALSE
+```
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Function to set markdown text color
+colorize <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+      x)
+  } else x
+}
+```
+
+
+```{r, include=FALSE}
+# Set height of chunk output
+options(width = 60)
+local({
+  hook_output <- knitr::knit_hooks$get('output')
+  knitr::knit_hooks$set(output = function(x, options) {
+    if (!is.null(options$max.height)) options$attr.output <- c(
+      options$attr.output,
+      sprintf('style="max-height: %s;"', options$max.height)
+    )
+    hook_output(x, options)
+  })
+})
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Load packages
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(cowplot)
+library(rmarkdown)
+```
+<!-- Information of Used Library -->
+### `r colorize('Information of Used R Libraries', 'blue')` 
+
+The following R libraries were used to process the data and produce this report.
+
+R: `r R.Version()$version.string`,
+
+dplyr: `r packageVersion('dplyr')`, 
+
+Seurat: `r packageVersion('Seurat')`, 
+
+patchwork: `r packageVersion('patchwork')`, 
+
+ggplot2: `r packageVersion('ggplot2')`, 
+
+cowplot: `r packageVersion('cowplot')`.
+
+```{r, echo=FALSE}
+# Useful string constant
+suffix <- "Seurat"
+batch_names <- c("P8_0", "P8_3", "P8_7")
+rawDataDir <- "/projectnb/czlab/A00/ycliu/scRNA_integration_benchmark_datasets/PBMC23K_rm25pct"
+projectName <- "seuratv4_PBMC23K_rm25pct"
+
+# Seurat parameters
+variable.features <- 2000
+nPCs <- 50
+```
+
+```{r, eval = FALSE, echo=FALSE}
+#Read in raw data and create Seurat object with min.cell=0 and min.features=0 to avoid any default filtering
+all.raw.data <- Read10X(data.dir = rawDataDir)
+data <- CreateSeuratObject(counts = all.raw.data, project = projectName, min.cell=0, min.features=0)
+print(unique(data@meta.data$orig.ident))
+```
+```{r, eval=FALSE, echo=FALSE}
+#Read in batch and label information
+batch <- read.csv(paste0(rawDataDir, "/", "batch.csv"), header=FALSE)
+labels <- read.csv(paste0(rawDataDir, "/", "labels.csv"), header=FALSE)
+```
+
+```{r, eval=FALSE, echo=FALSE}
+
+# Add batch and label metadata information to Seurat object
+data$batch <- as.factor(batch$V1) 
+data$labels <- as.factor(labels$V1)
+
+
+print(unique(data$batch))
+print(unique(data$labels))
+```
+
+```{r,eval=FALSE, echo=FALSE}
+#Verify that none of the cells got filtered during CreateSeuratObject()
+
+# Check the number of cells in the Seurat object
+num_cells <- length(Cells(data))
+
+# Check the length of labels 
+num_labels <- nrow(labels)
+
+cat("Number of cells in Seurat object:", num_cells, "\n")
+cat("Length of labels:", num_labels, "\n")
+```
+
+```{r,eval=FALSE, echo=FALSE}
+# Save raw data
+saveRDS(data, file = paste("data_raw.RDS") )
+```
+
+```{r, eval = FALSE, echo=FALSE}
+data <- NormalizeData(data, normalization.method = "LogNormalize", scale.factor = 10000)
+data <- FindVariableFeatures(data, selection.method = "vst", nfeatures = 2000)
+data <- ScaleData(data, verbose = FALSE)
+
+# dimension reduction
+data <- RunPCA(data, npcs = 50, verbose = FALSE)
+data <- RunUMAP(data, reduction = "pca", dims = 1:50)
+
+saveRDS(data, file = paste("data_raw_umap.RDS") )
+```
+
+# `r colorize('Non-integrated data for PBMC23K_rm25pct', 'blue')` {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+# Load raw data
+data <- readRDS("data_raw_umap.RDS")
+DimPlot(data, reduction = "umap", group.by= 'batch' ) + ggtitle('3 Batches before Integration')
+
+```
+
+
+```{r, eval = set_eval, echo=FALSE}
+# Load raw data for data integration
+data <- readRDS("data_raw_umap.RDS")
+data$group <- data$batch
+
+# split the dataset into a list of two seurat objects (stim and CTRL)
+data.list = SplitObject(data, split.by = "batch")
+
+# normalize and identify variable features for each dataset independently
+data.list <- lapply(X = data.list, FUN = function(x) {
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+# select features that are repeatedly variable across datasets for integration
+features <- SelectIntegrationFeatures(object.list = data.list)
+```
+
+```{r, eval = set_eval, echo=FALSE}
+# Perform integration
+# We then identify anchors using the FindIntegrationAnchors() function, which takes a list 
+# of Seurat objects as input, and use these anchors to integrate the two datasets together with IntegrateData().
+data.anchors <- FindIntegrationAnchors(object.list = data.list, anchor.features = features)
+
+# this command creates an 'integrated' data assay
+data.combined <- IntegrateData(anchorset = data.anchors)
+
+# Save raw data
+saveRDS(data.combined, file = paste("data_Integrated_3_batches.RDS") )
+```
+
+```{r, eval = set_eval, echo=FALSE}
+# Load raw data
+data.combined <- readRDS("data_Integrated_3_batches.RDS")
+```
+
+```{r, eval = set_eval, echo=FALSE}
+# Run the standard workflow for visualization and clustering
+data.combined <- ScaleData(data.combined, verbose = FALSE)
+data.combined <- RunPCA(data.combined, npcs = 50, verbose = FALSE)
+data.combined <- RunUMAP(data.combined, reduction = "pca", dims = 1:50)
+
+# Save integrated data
+saveRDS(data.combined, file = paste("data_Integrated_3_batches_umap.RDS") )
+```
+
+# `r colorize('UMAP for 3 batches after integration', 'blue')` {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+# Load integrated data
+data.combined <- readRDS("data_Integrated_3_batches_umap.RDS")
+
+DimPlot(data.combined, reduction = "umap", group.by= 'batch' ) + ggtitle('3 Batches after Integration')
+
+```
+
+```{r, eval = set_eval, echo=FALSE}
+#data.combined <- readRDS("data_Integrated_3_batches_umap.RDS")
+```
+
+```{r, eval = set_eval, echo=FALSE}
+# Extract PCA embeddings
+pca.embeddings <- Embeddings(data.combined, reduction = "pca")
+pca.df <- as.data.frame(pca.embeddings)
+
+# Save to CSV with index
+write.csv(pca.df, file = "seuratv4_matrix_with_index.csv")
+
+# Save to CSV without index
+pca.df_no_colnames <- pca.df
+colnames(pca.df_no_colnames) <- NULL
+write.csv(pca.df_no_colnames, file = "seuratv4_matrix.csv", row.names = FALSE)
+
+```
+
+```{r, eval = set_eval, echo=FALSE}
+# Extract UMAP embeddings
+umap.embeddings <- Embeddings(data.combined, reduction = "umap")
+umap.df <- as.data.frame(umap.embeddings)
+
+# Save to CSV with index
+write.csv(umap.df, file = "seuratv4_umap_with_index.csv")
+
+# Save to CSV without index
+umap.df_no_colnames <- umap.df
+colnames(umap.df_no_colnames) <- NULL
+write.csv(umap.df_no_colnames, file = "seuratv4_umap.csv", row.names = FALSE)
+```
+

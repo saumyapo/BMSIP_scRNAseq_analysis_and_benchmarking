@@ -1,0 +1,240 @@
+---
+title: 'PBMC23K_rm25pct FastMNN Integration'
+author: "Saumya"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Markdown parameters
+set_echo = FALSE
+set_eval = FALSE
+```
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Function to set markdown text color
+colorize <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+      x)
+  } else x
+}
+```
+
+
+```{r, include=FALSE}
+# Set height of chunk output
+options(width = 60)
+local({
+  hook_output <- knitr::knit_hooks$get('output')
+  knitr::knit_hooks$set(output = function(x, options) {
+    if (!is.null(options$max.height)) options$attr.output <- c(
+      options$attr.output,
+      sprintf('style="max-height: %s;"', options$max.height)
+    )
+    hook_output(x, options)
+  })
+})
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Load packages
+library(dplyr)
+library(patchwork)
+library(ggplot2)
+library(cowplot)
+library(rmarkdown)
+library(batchelor)
+library(SingleCellExperiment)
+library(scater)
+library(Matrix)
+library(scran)
+```
+<!-- Information of Used Library -->
+### `r colorize('Information of Used R Libraries', 'blue')` 
+
+The following R libraries were used to process the data and produce this report.
+
+R: `r R.Version()$version.string`,
+
+dplyr: `r packageVersion('dplyr')`, 
+
+patchwork: `r packageVersion('patchwork')`, 
+
+ggplot2: `r packageVersion('ggplot2')`, 
+
+cowplot: `r packageVersion('cowplot')`,
+
+batchelor: `r packageVersion('batchelor')`,
+
+SingleCellExperiment: `r packageVersion('SingleCellExperiment')`,
+
+scater: `r packageVersion('scater')`,
+
+Matrix: `r packageVersion('Matrix')`,
+
+scran: `r packageVersion('scran')`
+
+```{r, echo=FALSE}
+# Useful string constant
+suffix <- "fastMNN"
+batch_names <- c("P8_0", "P8_3", "P8_7")
+rawDataDir <- "/projectnb/czlab/A00/ycliu/scRNA_integration_benchmark_datasets/PBMC23K_rm25pct"
+projectName <- "fastmnn_PBMC23K_rm25pct"
+
+# Seurat parameters
+variable.features <- 2000
+nPCs <- 50
+```
+
+```{r, eval = FALSE, echo=FALSE}
+# Load data
+
+counts <- readMM(paste0(rawDataDir, "/matrix.mtx.gz"))
+genes <- read.table(paste0(rawDataDir, "/features.tsv.gz"), header=FALSE, stringsAsFactors=FALSE)
+barcodes <- read.table(paste0(rawDataDir, "/barcodes.tsv.gz"), header=FALSE, stringsAsFactors=FALSE)
+
+# Create SingleCellExperiment object
+sce <- SingleCellExperiment(assays=list(counts=as.matrix(counts)))
+rownames(sce) <- genes$V2
+colnames(sce) <- barcodes$V1
+
+```
+
+```{r, eval=FALSE, echo=FALSE}
+
+# Read in batch and label information
+batch <- read.csv(paste0(rawDataDir, "/", "batch.csv"), header=FALSE)
+labels <- read.csv(paste0(rawDataDir, "/", "labels.csv"), header=FALSE)
+sce$batch <- as.factor(batch$V1)
+sce$labels <- as.factor(labels$V1)
+
+print(unique(sce$batch))
+print(unique(sce$labels))
+
+```
+
+```{r,eval=FALSE, echo=FALSE}
+# Verify that none of the cells got filtered while reading in data
+cat("Number of cells in SingleCellExperiment object:", ncol(sce), "\n")
+cat("Length of labels:", nrow(labels), "\n")
+```
+
+```{r,eval=FALSE, echo=FALSE}
+# Save raw data
+saveRDS(sce, file = "data_raw.RDS")
+```
+
+```{r, eval = FALSE, echo=FALSE}
+# for reproducibility
+set.seed(1234)
+
+#Read raw data
+sce <- readRDS("data_raw.RDS")
+```
+
+```{r, eval = FALSE, echo=FALSE}
+# Normalise data
+sce <- logNormCounts(sce)
+# Feature selection
+dec <- modelGeneVar(sce)
+#Top 2000 features which will be used later in FastMNN, since it requires an equal number of genes in batches.
+chosen.hvgs <- getTopHVGs(dec, n = 2000)
+```
+
+```{r,eval=FALSE, echo=FALSE}
+# Perform PCA
+sce <- runPCA(sce, ncomponents = 50)
+# Perform UMAP
+sce <- runUMAP(sce, dimred = "PCA", ncomponents = 2)
+```
+
+```{r,eval=FALSE, echo=FALSE}
+# Save raw data with umap
+saveRDS(sce, file = "data_raw_umap.RDS")
+```
+
+# `r colorize('Non-integrated data for PBMC23K_rm25pct', 'blue')`
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+# Load raw data
+sce <- readRDS("data_raw_umap.RDS")
+plotReducedDim(sce, dimred = "UMAP", colour_by = "batch") + ggtitle('3 Batches before Integration')
+
+```
+
+
+```{r, eval = set_eval, echo=FALSE}
+# Load raw data for data integration
+sce <- readRDS("data_raw_umap.RDS")
+
+# Run fastMNN integration after subsetting for common genes found earlier)
+sce_integrated <- fastMNN(sce, batch=sce$batch, subset.row=chosen.hvgs)
+
+# Save integrated data
+saveRDS(sce_integrated, file = "data_Integrated_fastMNN.RDS")
+```
+
+```{r, eval = set_eval, echo=FALSE}
+# Load integrated data
+sce_integrated <- readRDS("data_Integrated_fastMNN.RDS")
+```
+
+```{r, eval = set_eval, echo=FALSE}
+# Run the standard workflow for visualization
+sce_integrated <- runUMAP(sce_integrated, dimred="corrected",ncomponents = 2)
+
+# Save integrated data with UMAP
+saveRDS(sce_integrated, file = "data_Integrated_fastMNN_umap.RDS")
+```
+
+
+# `r colorize('UMAP for 3 batches after integration', 'blue')` 
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+# Load integrated data
+sce_integrated <- readRDS("data_Integrated_fastMNN_umap.RDS")
+#Alternative is plotUMAP, so dimred is not required
+plotReducedDim(sce_integrated, dimred = "UMAP", colour_by = "batch") + ggtitle('3 Batches after Integration')
+
+```
+
+```{r, eval = set_eval, echo=FALSE}
+sce_integrated <- readRDS("data_Integrated_fastMNN_umap.RDS")
+```
+
+
+```{r, eval = set_eval, echo=FALSE}
+# Extract corrected PCA embeddings
+pca.embeddings <- reducedDim(sce_integrated, "corrected")
+pca.df <- as.data.frame(pca.embeddings)
+
+# Save to CSV with index
+write.csv(pca.df, file = "fastMNN_matrix_with_index.csv")
+
+# Save to CSV without index
+pca.df_no_colnames <- pca.df
+colnames(pca.df_no_colnames) <- NULL
+write.csv(pca.df_no_colnames, file = "fastMNN_matrix.csv", row.names = FALSE)
+
+
+```
+
+```{r, eval = set_eval, echo=FALSE}
+# Extract corrected UMAP embeddings
+umap.embeddings <- reducedDim(sce_integrated, "UMAP")
+umap.df <- as.data.frame(umap.embeddings)
+
+# Save to CSV with index
+write.csv(umap.df, file = "fastMNN_umap_with_index.csv")
+
+# Save to CSV without index
+umap.df_no_colnames <- umap.df
+colnames(umap.df_no_colnames) <- NULL
+write.csv(umap.df_no_colnames, file = "fastMNN_umap.csv", row.names = FALSE)
+```
+

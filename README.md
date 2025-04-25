@@ -5,7 +5,7 @@
 # BMSIP scRNAseq Analysis and Benchmarking
 Analysis of scRNA-seq samples using Seurat and benchmarking of various industry standard data integration tools.
 
-The `docs` folder has the poster which was presented summarising the work done over the period of the internship, as well as, 2 presentations during BMSIP meetings.
+The `docs` folder has the poster which was presented summarising the work done over the period of the internship, as well as 2 presentations during BMSIP meetings.
 
 ## Deliverables:
 - [x] Analysing and compiling results for 5 scRNASeq mouse samples using Seurat.

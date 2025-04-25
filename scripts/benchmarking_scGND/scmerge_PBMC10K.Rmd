@@ -1,0 +1,262 @@
+---
+title: 'PBMC10K scMerge Integration'
+author: "Saumya"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Markdown parameters
+set_echo = FALSE
+set_eval = FALSE
+```
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Function to set markdown text color
+colorize <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+      x)
+  } else x
+}
+```
+
+
+```{r, include=FALSE}
+# Set height of chunk output
+options(width = 60)
+local({
+  hook_output <- knitr::knit_hooks$get('output')
+  knitr::knit_hooks$set(output = function(x, options) {
+    if (!is.null(options$max.height)) options$attr.output <- c(
+      options$attr.output,
+      sprintf('style="max-height: %s;"', options$max.height)
+    )
+    hook_output(x, options)
+  })
+})
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Load packages
+library(scMerge)
+library(dplyr)
+library(patchwork)
+library(ggplot2)
+library(cowplot)
+library(rmarkdown)
+library(batchelor)
+library(SingleCellExperiment)
+library(scater)
+library(Matrix)
+library(scran)
+```
+<!-- Information of Used Library -->
+### `r colorize('Information of Used R Libraries', 'blue')` 
+
+The following R libraries were used to process the data and produce this report.
+
+R: `r R.Version()$version.string`,
+
+scMerge: `r packageVersion('scMerge')`, 
+
+dplyr: `r packageVersion('dplyr')`, 
+
+patchwork: `r packageVersion('patchwork')`, 
+
+ggplot2: `r packageVersion('ggplot2')`, 
+
+cowplot: `r packageVersion('cowplot')`,
+
+batchelor: `r packageVersion('batchelor')`,
+
+SingleCellExperiment: `r packageVersion('SingleCellExperiment')`,
+
+scater: `r packageVersion('scater')`,
+
+Matrix: `r packageVersion('Matrix')`,
+
+scran: `r packageVersion('scran')`
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Useful string constant
+suffix <- "scmerge"
+batch_names <- c("batch_0", "batch_1")
+rawDataDir <- "/projectnb/czlab/A00/ycliu/scRNA_integration_benchmark_datasets/PBMC10K"
+projectName <- "scmerge_PBMC10K"
+
+# Seurat parameters
+variable.features <- 2000
+nPCs <- 50
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Load data
+
+counts <- readMM(paste0(rawDataDir, "/matrix.mtx.gz"))
+genes <- read.table(paste0(rawDataDir, "/features.tsv.gz"), header=FALSE, stringsAsFactors=FALSE)
+barcodes <- read.table(paste0(rawDataDir, "/barcodes.tsv.gz"), header=FALSE, stringsAsFactors=FALSE)
+
+# Create SingleCellExperiment object
+sce <- SingleCellExperiment(assays=list(counts=as.matrix(counts)))
+rownames(sce) <- genes$V2
+colnames(sce) <- barcodes$V1
+
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Read in batch and label information
+batch <- read.csv(paste0(rawDataDir, "/", "batch.csv"), header=FALSE)
+labels <- read.csv(paste0(rawDataDir, "/", "labels.csv"), header=FALSE)
+sce$batch <- as.factor(batch$V1)
+sce$labels <- as.factor(labels$V1)
+
+print(unique(sce$batch))
+print(unique(sce$labels))
+
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Verify that none of the cells got filtered while reading in data
+cat("Number of cells in SingleCellExperiment object:", ncol(sce), "\n")
+cat("Length of labels:", nrow(labels), "\n")
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Save raw data
+saveRDS(sce, file = "data_raw.RDS")
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# for reproducibility
+set.seed(1234)
+
+sce <- readRDS("data_raw.RDS")
+# Normalise data
+sce <- logNormCounts(sce)
+
+# Feature selection
+dec <- modelGeneVar(sce)
+
+#Top 2000 features which will be used later in FastMNN, since it requires an equal number of genes in batches.
+chosen.hvgs <- getTopHVGs(dec, n = 2000)
+
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Perform PCA
+sce <- runPCA(sce, ncomponents = 50)
+
+# Perform UMAP
+sce <- runUMAP(sce, dimred = "PCA", name= "UMAP", ncomponents = 2)
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+saveRDS(sce, file = "data_raw_umap.RDS")
+```
+
+# `r colorize('Non-integrated data for PBMC10K', 'blue')` {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+# Load raw data
+sce <- readRDS("data_raw_umap.RDS")
+plotReducedDim(sce, dimred = "UMAP", colour_by = "batch") + ggtitle('2 Batches before Integration')
+
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Compute SEG from input data matrix. Can use pre-built list from scMerge but ctl list must have a non-empty intersection with the rows of sce_combine which can be a potential issue when using pre-determined lists
+
+#load raw data
+sce <- readRDS("data_raw_umap.RDS")
+
+#Expression matrix
+exprs_mat = SummarizedExperiment::assay(sce, 'counts')
+# Storing computed SEG data frame
+result_segs = scSEGIndex(exprs_mat = exprs_mat)
+```
+
+
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Run scMerge integration. Using to find pseudo-replicates using k-means clustering based on input SEGs
+# By default only uses 50% of cells, so replicate_prop = 1 makes it use 100%
+
+sce <- scMerge(
+  sce_combine = sce,
+  ctl = rownames(result_segs),
+  kmeansK = c(9,9),
+  assay_name = "scMerge_corrected",
+  exprs = "logcounts",
+  replicate_prop = 1
+)
+
+# Save integrated data
+saveRDS(sce, file = "data_Integrated_scmerge.RDS")
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Load integrated data
+sce_integrated <- readRDS("data_Integrated_scmerge.RDS")
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Run the standard workflow for visualization
+# Perform PCA
+sce_integrated <- runPCA(sce_integrated, exprs_values = "scMerge_corrected", name= "scMerge_corrected_PCA", ncomponents = 50)
+
+# Perform UMAP
+sce_integrated <- runUMAP(sce_integrated, dimred = "scMerge_corrected_PCA", ncomponents = 2)
+
+# Save integrated data with UMAP
+saveRDS(sce_integrated, file = "data_Integrated_scmerge_umap.RDS")
+```
+
+
+# `r colorize('UMAP for 2 batches after integration', 'blue')` 
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+# Load integrated data
+sce_integrated <- readRDS("data_Integrated_scmerge_umap.RDS")
+plotReducedDim(sce_integrated, dimred = "UMAP", colour_by = "batch") + ggtitle('2 Batches after Integration')
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+sce_integrated <- readRDS("data_Integrated_scmerge_umap.RDS")
+```
+
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Extract corrected PCA embeddings
+pca.embeddings <- reducedDim(sce_integrated, "scMerge_corrected_PCA")
+pca.df <- as.data.frame(pca.embeddings)
+
+# Save to CSV with index
+write.csv(pca.df, file = "scmerge_matrix_with_index.csv")
+
+# Save to CSV without index
+pca.df_no_colnames <- pca.df
+colnames(pca.df_no_colnames) <- NULL
+write.csv(pca.df_no_colnames, file = "scmerge_matrix.csv", row.names = FALSE)
+```
+
+```{r, results = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Extract corrected UMAP embeddings
+umap.embeddings <- reducedDim(sce_integrated, "UMAP")
+umap.df <- as.data.frame(umap.embeddings)
+
+# Save to CSV with index
+write.csv(umap.df, file = "scmerge_umap_with_index.csv")
+
+# Save to CSV without index
+umap.df_no_colnames <- umap.df
+colnames(umap.df_no_colnames) <- NULL
+write.csv(umap.df_no_colnames, file = "scmerge_umap.csv", row.names = FALSE)
+```
+

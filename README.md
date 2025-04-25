@@ -12,4 +12,4 @@ Analysis of scRNA-seq samples using Seurat and benchmarking of various industry 
 - [x] Running tools in R and python for comparative study with the new tool actively being developed in the lab. Current tools which have been shortlisted include: MNN, fastMNN, scmap, limma, scMerge, LIGER, scGEN, MMD-ResNet, ZINB-WaVE.
 
 ## Reference:
-- Liu, Y. C., Zou, A., Lu, S. L., Lee, J. H., Wang, J., & Zhang, C. (2024). scGND: Graph neural diffusion model enhances single-cell RNA-seq analysis. bioRxiv, 2024-01.
+- [Liu, Y. C., Zou, A., Lu, S. L., Lee, J. H., Wang, J., & Zhang, C. (2024). scGND: Graph neural diffusion model enhances single-cell RNA-seq analysis. bioRxiv, 2024-01.](https://www.biorxiv.org/content/10.1101/2024.01.28.577667v1.abstract)

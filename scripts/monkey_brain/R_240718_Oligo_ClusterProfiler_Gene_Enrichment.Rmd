@@ -1,0 +1,366 @@
+---
+title: "GSEA Analysis for Oligo Cluster"
+author: "Saumya"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Markdown parameters
+set_echo = FALSE
+set_eval = FALSE
+```
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Function to set markdown text color
+colorize <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+            x)
+  } else x
+}
+```
+
+```{r, include=FALSE}
+# Set height of chunk output
+options(width = 60)
+local({
+  hook_output <- knitr::knit_hooks$get('output')
+  knitr::knit_hooks$set(output = function(x, options) {
+    if (!is.null(options$max.height)) options$attr.output <- c(
+      options$attr.output,
+      sprintf('style="max-height: %s;"', options$max.height)
+    )
+    hook_output(x, options)
+  })
+})
+```
+
+
+```{r, results = FALSE, echo=set_echo, message=FALSE, warning=FALSE}
+# Load required libraries
+library(openxlsx)
+library(clusterProfiler)
+library(msigdbr)
+library(org.Mmu.eg.db)
+library(tidyverse)
+library(readxl)
+library(rmarkdown)
+library(ggplot2)
+```
+
+<!-- Information of Used Library -->
+### `r colorize('Information of Used R Libraries', 'blue')` 
+
+The following R libraries were used to process the data and produce this report.
+
+
+R: `r R.Version()$version.string`,
+
+openxlsx: `r packageVersion('openxlsx')`,
+
+clusterProfiler: `r packageVersion('clusterProfiler')`, 
+
+msigdbr: `r packageVersion('msigdbr')`, 
+
+org.Mmu.eg.db: `r packageVersion('org.Mmu.eg.db')`, 
+
+tidyverse: `r packageVersion('tidyverse')`,
+
+readxl: `r packageVersion('readxl')`, 
+
+rmarkdown: `r packageVersion('rmarkdown')`,
+
+ggplot2: `r packageVersion('ggplot2')`
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Prepare gene sets for Rhesus monkey
+#Picking the same categories as used for DAVID analysis
+set.seed(2024)
+monkey_gobp_sets <- msigdbr(species = "Macaca mulatta", category = "C5", subcategory = "GO:BP")
+monkey_kegg_sets <- msigdbr(species = "Macaca mulatta", category = "C2", subcategory = "CP:KEGG")
+monkey_reactome_sets <- msigdbr(species = "Macaca mulatta", category = "C2", subcategory = "CP:REACTOME")
+
+monkey_gene_sets <- rbind(monkey_gobp_sets, monkey_kegg_sets, monkey_reactome_sets)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Define the GSEA function for mouse
+gsea_monkey <- function(df, condition){
+  df_cluster <- df %>% dplyr::filter(cluster == condition)
+  lfc_vector <- df_cluster$avg_log2FC
+  names(lfc_vector) <- df_cluster$gene
+  lfc_vector <- sort(lfc_vector, decreasing = TRUE)
+
+  gsea_results <- GSEA(
+    geneList = lfc_vector, # Ordered ranked gene list
+    #minGSSize = 5, # Minimum gene set size
+    #maxGSSize = 500, # Maximum gene set size
+    eps = 0, # Boundary for calculating the p value
+    seed = TRUE, # Set seed to make results reproducible
+    pvalueCutoff = 1,
+    pAdjustMethod = "BH", # Benjamini-Hochberg correction
+    TERM2GENE = dplyr::select(monkey_gene_sets, gs_name, gene_symbol)
+  )
+  return(gsea_results@result)
+}
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Read the input CSV file
+degs_oligo <- read_csv("data_markers_oligo.csv")
+degs_immature <- read_csv("data_markers_immature_oligo.csv")
+degs_mature <- read_csv("data_markers_mature_oligo.csv")
+degs_synaptic <- read_csv("data_markers_synaptic_oligo.csv")
+
+# Define conditions (clusters) from input csv file
+conditions_oligo <- unique(degs_oligo$cluster)
+conditions_immature <- unique(degs_immature$cluster)
+conditions_mature <- unique(degs_mature$cluster)
+conditions_synaptic <- unique(degs_synaptic$cluster)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Perform GSEA for all conditions and collect results
+
+gsea_results_oligo <- data.frame()
+for (i in conditions_oligo) {
+  gsea_oligo_tmp <- gsea_monkey(degs_oligo, i) %>% dplyr::mutate(cluster = i)
+  gsea_results_oligo <- rbind(gsea_results_oligo, gsea_oligo_tmp)
+}
+
+gsea_results_immature <- data.frame()
+for (i in conditions_immature) {
+  gsea_immature_tmp <- gsea_monkey(degs_immature, i) %>% dplyr::mutate(cluster = i)
+  gsea_results_immature <- rbind(gsea_results_immature, gsea_immature_tmp)
+}
+
+gsea_results_mature <- data.frame()
+for (i in conditions_mature) {
+  gsea_mature_tmp <- gsea_monkey(degs_mature, i) %>% dplyr::mutate(cluster = i)
+  gsea_results_mature <- rbind(gsea_results_mature, gsea_mature_tmp)
+}
+
+gsea_results_synaptic <- data.frame()
+for (i in conditions_synaptic) {
+  gsea_synaptic_tmp <- gsea_monkey(degs_synaptic, i) %>% dplyr::mutate(cluster = i)
+  gsea_results_synaptic <- rbind(gsea_results_synaptic, gsea_synaptic_tmp)
+}
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Split the results by condition
+results_list_oligo <- list()
+for (type in conditions_oligo) {
+  type_results_oligo <- gsea_results_oligo %>% dplyr::filter(cluster == type) %>% dplyr::select(-cluster)
+  results_list_oligo[[type]] <- type_results_oligo
+}
+
+results_list_immature <- list()
+for (type in conditions_immature) {
+  type_results_immature <- gsea_results_immature %>% dplyr::filter(cluster == type) %>% dplyr::select(-cluster)
+  results_list_immature[[type]] <- type_results_immature
+}
+
+results_list_mature <- list()
+for (type in conditions_mature) {
+  type_results_mature <- gsea_results_mature %>% dplyr::filter(cluster == type) %>% dplyr::select(-cluster)
+  results_list_mature[[type]] <- type_results_mature
+}
+
+results_list_synaptic <- list()
+for (type in conditions_synaptic) {
+  type_results_synaptic <- gsea_results_synaptic %>% dplyr::filter(cluster == type) %>% dplyr::select(-cluster)
+  results_list_synaptic[[type]] <- type_results_synaptic
+}
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Create a list of data frames for writing to Excel
+write.xlsx(results_list_oligo, file = "ClusterProfiler_GSEA_oligo.xlsx")
+write.xlsx(results_list_mature, file = "ClusterProfiler_GSEA_mature_oligo.xlsx")
+write.xlsx(results_list_immature, file = "ClusterProfiler_GSEA_immature_oligo.xlsx")
+write.xlsx(results_list_synaptic, file = "ClusterProfiler_GSEA_synaptic_oligo.xlsx")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Read the sheets into data frames
+oligo_results <- read_excel("ClusterProfiler_GSEA_synaptic_oligo.xlsx")
+immature_results <- read_excel("ClusterProfiler_GSEA_immature_oligo.xlsx")
+mature_results <- read_excel("ClusterProfiler_GSEA_mature_oligo.xlsx")
+synaptic_results <- read_excel("ClusterProfiler_GSEA_synaptic_oligo.xlsx")
+```
+
+## `r colorize('CR vs CONTROL ClusterProfiler Results', 'blue')` {.tabset}
+
+### Understanding the output
+
+The output of the enrichment analysis is an excel file divided into subsheets based on clusters (JAK2 conditions) which has 11 headers and explanation on each of the headers can be found below:
+
+1. ID: Identifier for the gene set. This is the identifier of the pathway or gene ontology term associated with the gene set.
+
+2. Description: Description of the gene set. This typically provides additional details about the pathway or biological process represented by the gene set.
+
+3. setSize: Size of the gene set, i.e., the number of genes included in the gene set.
+
+4. enrichmentScore: The enrichment score computed by the gene set enrichment analysis. This score indicates the degree to which the gene set is overrepresented at the top or bottom of a ranked list of genes (based on fold changes or another ranking metric).  A higher enrichmentScore (closer to 1 or -1) indicates stronger enrichment, which is desirable as it suggests that the gene set is significantly overrepresented in the analyzed dataset. 
+
+5. NES (Normalized Enrichment Score): The normalized enrichment score, which is the enrichment score normalized to account for differences in gene set sizes and correlations between gene sets and the data being analyzed. Higher NES is desired and considered more reliable whereas A NES close to 0 indicates no enrichment.
+
+6. pvalue: The p-value associated with the enrichment score. It indicates the statistical significance of the enrichment of the gene set in the ranked list of genes. Lower p value is better.
+
+7. p.adjust: The adjusted p-value after multiple testing correction. Adjusted using Benjamini-Hochberg (BH) procedure. Lower values are better.
+
+8. qvalue: The q-value, which is another measure of significance adjusted for multiple testing. It is similar to the adjusted p-value. Lower values are better.
+
+9. rank: The rank at which the gene set achieves its maximum enrichment score in the ranked list of genes. A lower rank indicates that the gene set is enriched towards the top of the ranked list of genes, which is desirable as it suggests higher significance. 
+
+10. leading_edge: Information about the leading edge subset of genes contributing to the enrichment score. This typically includes the percentage of tags, list, and signal genes in the leading edge. Higher percentage contribution indicates a substantial contribution of these genes to the observed enrichment.
+
+11. core_enrichment: Specific genes involved in the core enrichment of the gene set. These are often the key members of the gene set contributing to its enrichment score.
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+# Display the contents of the sheets using paged_table
+cat('###', "Oligo Cluster", ' \n')
+paged_table(oligo_results)
+cat(' \n \n')
+cat('###', "Immature Oligo Cluster", ' \n')
+paged_table(immature_results)
+cat(' \n \n')
+cat('###', "Mature Oligo Cluster", ' \n')
+paged_table(mature_results)
+cat(' \n \n')
+cat('###', "Synaptic Oligo Cluster", ' \n')
+paged_table(synaptic_results)
+cat(' \n \n')
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Function to create a bar plot for the top 10 pathways
+plot_top_pathways <- function(gsea_results, top_n = 10) {
+  
+  #Filter input based on NES to form 2 dfs with upregulated and downregulated pathways
+  top_upregulated <- gsea_results %>%
+    arrange(desc(NES)) %>%
+    head(top_n)
+  
+  top_downregulated <- gsea_results %>%
+    arrange(NES) %>%
+    head(top_n)
+  
+   # Create a horizontal bar plot for top 10 upregulated pathways
+  up_plot <- ggplot(top_upregulated, aes(x = reorder(Description, NES), y = NES)) +
+    geom_bar(stat = "identity", fill = "darkred") +
+    coord_flip() +
+    labs(title = "Top 10 Upregulated Pathways Based on NES", x = "Pathway", y = "Normalized Enrichment Score (NES)") +
+    theme_minimal() +
+    theme(axis.text.y = element_text(size = 6))
+  
+  # Create a horizontal bar plot for top 10 downregulated pathways
+  down_plot <- ggplot(top_downregulated, aes(x = reorder(Description, -NES), y = NES)) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    coord_flip() +
+    labs(title = "Top 10 Downregulated Pathways Based on NES", x = "Pathway", y = "Normalized Enrichment Score (NES)") +
+    theme_minimal() +
+    theme(axis.text.y = element_text(size = 6))
+  
+  return(list(up_plot = up_plot, down_plot = down_plot))
+}
+  
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Barplots for both conditions
+plots_oligo <- plot_top_pathways(oligo_results)
+plots_immature <- plot_top_pathways(immature_results)
+plots_mature <- plot_top_pathways(mature_results)
+plots_synaptic <- plot_top_pathways(synaptic_results)
+```
+ 
+
+## `r colorize('Barplot of Top 10 Upregulated and Downregulated Pathways based on NES', 'blue')` {.tabset}
+
+### Oligo Cluster {.tabset}
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE,fig.width=10,fig.height=6}
+# Display barplots
+cat('####', "Oligo Upregulated", ' \n')
+print(plots_oligo$up_plot)
+cat(' \n \n')
+cat('####', "Oligo Downregulated", ' \n')
+print(plots_oligo$down_plot)
+cat(' \n \n')
+```
+
+### Immature Oligo Cluster {.tabset}
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE,fig.width=10,fig.height=6}
+cat('####', "Immature Oligo Upregulated", ' \n')
+print(plots_immature$up_plot)
+cat(' \n \n')
+cat('####', "Immature Oligo Downregulated", ' \n')
+print(plots_immature$down_plot)
+cat(' \n \n')
+cat(' \n \n')
+```
+
+### Mature Oligo Cluster {.tabset}
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE,fig.width=10,fig.height=6}
+cat('####', "Mature Oligo Upregulated", ' \n')
+print(plots_mature$up_plot)
+cat(' \n \n')
+cat('####', "Mature Oligo Downregulated", ' \n')
+print(plots_mature$down_plot)
+cat(' \n \n')
+cat(' \n \n')
+```
+
+### Synaptic Oligo Cluster {.tabset}
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE,fig.width=10,fig.height=6}
+cat('####', "Synaptic Oligo Upregulated", ' \n')
+print(plots_synaptic$up_plot)
+cat(' \n \n')
+cat('####', "Synaptic Oligo Downregulated", ' \n')
+print(plots_synaptic$down_plot)
+cat(' \n \n')
+cat(' \n \n')
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# PDF marker plot 
+pdf("pdf_clusterprofiler_oligo.pdf", width = 10, height = 8, useDingbats = FALSE)
+print(plots_oligo$up_plot)
+print(plots_oligo$down_plot)
+dev.off()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# PDF marker plot 
+pdf("pdf_clusterprofiler_immature.pdf", width = 10, height = 8, useDingbats = FALSE)
+print(plots_immature$up_plot)
+print(plots_immature$down_plot)
+dev.off()
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# PDF marker plot 
+pdf("pdf_clusterprofiler_mature.pdf", width = 10, height = 8, useDingbats = FALSE)
+print(plots_mature$up_plot)
+print(plots_mature$down_plot)
+dev.off()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# PDF marker plot 
+pdf("pdf_clusterprofiler_synaptic_oligo.pdf", width = 10, height = 8, useDingbats = FALSE)
+print(plots_synaptic$up_plot)
+print(plots_synaptic$down_plot)
+dev.off()
+```
+

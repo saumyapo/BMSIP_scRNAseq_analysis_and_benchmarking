@@ -1,0 +1,244 @@
+---
+title: "Trajectory Analysis for Oligo Cluster"
+author: "Saumya"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Markdown parameters
+set_echo = FALSE
+set_eval = FALSE
+```
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Function to set markdown text color
+colorize <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+      x)
+  } else x
+}
+```
+
+
+```{r, include=FALSE}
+# Set height of chunk output
+options(width = 60)
+local({
+  hook_output <- knitr::knit_hooks$get('output')
+  knitr::knit_hooks$set(output = function(x, options) {
+    if (!is.null(options$max.height)) options$attr.output <- c(
+      options$attr.output,
+      sprintf('style="max-height: %s;"', options$max.height)
+    )
+    hook_output(x, options)
+  })
+})
+```
+
+```{r, results = FALSE, echo=set_echo, message=FALSE, warning=FALSE}
+# Load packages
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(cowplot)
+library(rmarkdown)
+library(monocle3)
+library(SeuratWrappers)
+```
+
+<!-- Information of Used Library -->
+### `r colorize('Information of Used R Libraries', 'blue')` 
+
+The following R libraries were used to process the data and produce this report.
+
+dplyr: `r packageVersion('dplyr')`, 
+
+Seurat: `r packageVersion('Seurat')`, 
+
+patchwork: `r packageVersion('patchwork')`, 
+
+ggplot2: `r packageVersion('ggplot2')`, 
+
+cowplot: `r packageVersion('cowplot')`,
+
+Monocle3 : `r packageVersion('monocle3')`,
+
+SeuratWrappers: `r packageVersion('SeuratWrappers')`
+
+# `r colorize('Trajectory/Pseudotime Analysis for Oligo Cluster using Monocle3', 'blue')`
+
+<!-- # ```{r, echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- # data.combined <- readRDS("Cluster0filt_data_Oligo_3_subclusters.RDS") -->
+<!-- #  -->
+<!-- # old_to_new_labels <- c( -->
+<!-- #                           "Oligo-1" = "Mature Oligodendrocyte", -->
+<!-- #                           "Immature-Oligo" = "Immature Oligodendrocyte", -->
+<!-- #                           "TBD" = "Synaptic Oligodendrocyte" -->
+<!-- #                        ) -->
+<!-- # #Get the current cluster identities --> -->
+<!-- # current_clusters <- Idents(data.combined) -->
+<!-- # # Map the old cluster labels to the new labels --> -->
+<!-- # new_cluster_ids <- plyr::mapvalues(current_clusters, from = names(old_to_new_labels), to = old_to_new_labels) -->
+<!-- # # Set the new cluster identities -->
+<!-- # data.combined <- SetIdent(data.combined, value = new_cluster_ids) -->
+<!-- # data.combined$renamed_3_clusters <- Idents(data.combined) -->
+<!-- # current_idents <- Idents(data.combined) -->
+<!-- # new_idents <- factor(current_idents) -->
+<!-- # Idents(data.combined) <- new_idents -->
+<!-- # ``` -->
+<!-- #  -->
+<!-- #  -->
+<!-- # ```{r, eval=FALSE,echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- # saveRDS(data.combined, file = "Cluster0filt_data_Oligo_3_subclusters.RDS") -->
+<!-- # ``` -->
+
+
+```{r, eval=FALSE,echo=FALSE, message=FALSE, warning=FALSE}
+data.combined <- readRDS("Cluster0filt_data_Oligo_3_subclusters.RDS")
+my.so<-data.combined
+
+# Project PC dimensions to whole data set
+my.so <- ProjectDim(my.so, reduction = "pca")
+```
+
+```{r, eval=FALSE,echo=FALSE, message=FALSE, warning=FALSE}
+# Create an expression matrix
+expression_matrix <- my.so@assays$RNA@counts
+
+# Get cell metadata
+cell_metadata <- my.so@meta.data
+if (all.equal(colnames(expression_matrix), rownames(cell_metadata))) {
+  print(sprintf("Cell identifiers match"))
+} else {
+  print(sprintf("Cell identifier mismatch - %i cells in expression matrix, %i cells in metadata",
+                ncol(expression_matrix), nrow(cell_metadata)))
+  print("If the counts are equal, sort differences will throw this error")
+}
+```
+
+```{r,eval=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# get gene annotations
+gene_annotation <- data.frame(gene_short_name = rownames(my.so@assays$RNA), row.names = rownames(my.so@assays$RNA))
+if (all.equal(rownames(expression_matrix), rownames(gene_annotation))) {
+  print(sprintf("Gene identifiers all match"))
+} else {
+  print(sprintf("Gene identifier mismatch - %i genes in expression matrix, %i gene in gene annotation",
+                nrow(expression_matrix), nrow(gene_annotation)))
+  print("If the counts are equal, sort differences will throw this error")
+}
+```
+
+```{r, eval=FALSE,echo=FALSE, message=FALSE, warning=FALSE}
+# Seurat-derived CDS
+cds <- new_cell_data_set(expression_matrix,
+                            cell_metadata = cell_metadata,
+                            gene_metadata = gene_annotation)
+```
+
+
+```{r, eval=FALSE,echo=FALSE, message=FALSE, warning=FALSE}
+#Transfer Seurat embeddings and cluster info to get same UMAP
+reducedDim(cds, type = "PCA") <- my.so@reductions$pca@cell.embeddings 
+cds@reduce_dim_aux$prop_var_expl <- my.so@reductions$pca@stdev
+#plot_pc_variance_explained(cds)
+```
+
+```{r, eval=FALSE,echo=FALSE, message=FALSE, warning=FALSE}
+cds@int_colData@listData$reducedDims$UMAP <- my.so@reductions$umap@cell.embeddings
+plot_cells(cds)
+```
+
+```{r, eval=FALSE,echo=FALSE, message=FALSE, warning=FALSE}
+cds@clusters$UMAP_so$clusters <- my.so@meta.data$renamed_3_clusters
+cds <- cluster_cells(cds, reduction_method = "UMAP", partitioning_method = "seurat_clusters")
+```
+
+```{r, eval=FALSE,echo=FALSE, message=FALSE, warning=FALSE}
+saveRDS(cds, file = "oligo_monocle3_cds.RDS")
+```
+
+## Seurat and Monocle3 clusters {.tabset}
+```{r, results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+my.so <- readRDS("Cluster0filt_data_Oligo_3_subclusters.RDS")
+cds <- readRDS("oligo_monocle3_cds.RDS")
+
+#Plot clusters for comparsion between Seurat and Monocle3 clustering
+cat('###',"Seurat Clusters",' \n')
+DimPlot(my.so, reduction = "umap")+ggtitle("Seurat Cluster")
+cat('\n \n')
+cat('###',"Monocle3 Clusters",' \n')
+plot_cells(cds, color_cells_by = "cluster", label_cell_groups=FALSE)+ggtitle("Monocle Cluster")
+cat('\n \n')
+```
+
+```{r, eval=FALSE,echo=FALSE, message=FALSE, warning=FALSE}
+cds <- learn_graph(cds)
+```
+
+```{r, eval=FALSE,echo=FALSE, message=FALSE, warning=FALSE}
+# Extract the Seurat cluster information from the Monocle3 object
+cds@clusters$renamed_3_clusters <- my.so@meta.data$renamed_3_clusters
+
+# Identify the root cells that correspond to the Immature Oligodendrocyte cluster
+root = "Immature Oligodendrocyte"
+root_cells <- rownames(subset(colData(cds), renamed_3_clusters == root))
+print(table(cds@clusters$renamed_3_clusters))
+print(length(root_cells))
+```
+
+```{r, eval=FALSE,echo=FALSE, message=FALSE, warning=FALSE}
+# Order cells in the Monocle3 object using the identified root cells
+cds <- order_cells(cds, root_cells = root_cells)
+```
+
+```{r, eval=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+saveRDS(cds, file = "oligo_monocle3_cds.RDS")
+```
+
+## Monocle3 Pseudotime Analysis {.tabset}
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Plot cells with pseudotime
+#cds <- readRDS("oligo_monocle3_cds.RDS")
+seurat_pseudotime <- plot_cells(cds, reduction_method = "UMAP",cell_size = 0.5, color_cells_by = "pseudotime") + ggtitle("Monocle3 Pseudotime Analysis")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Plot cells with cell types
+celltype_pseudotime <- plot_cells(
+  cds, 
+  reduction_method = "UMAP", 
+  cell_size = 0.5, 
+  color_cells_by = "renamed_3_clusters", 
+  label_cell_groups = FALSE
+) + theme(legend.position = "right") + ggtitle("Pseudotime Analysis with Cell Type")
+```
+
+```{r, results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+#Plot pseudotime analysis results
+cat('###',"Pseudotime",' \n')
+print(seurat_pseudotime)
+cat('\n \n')
+cat('###',"Pseudotime with Cell Type",' \n')
+print(celltype_pseudotime)
+cat('\n \n')
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pdf(paste("pdf_oligo_trajectory_analysis.pdf"), width=10, height=8, useDingbats = FALSE)
+print(seurat_pseudotime)
+dev.off()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pdf(paste("pdf_oligo_trajectory_analysis_celltype.pdf"), width=10, height=8, useDingbats = FALSE)
+print(celltype_pseudotime)
+dev.off()
+```

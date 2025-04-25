@@ -1,0 +1,1292 @@
+---
+title: "DEG Markers for Oligo Subclusters in 10 samples"
+author: "K4"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Markdown parameters
+set_echo = FALSE
+set_eval = FALSE
+```
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Function to set markdown text color
+colorize <- function(x, color) {
+  if (knitr::is_latex_output()) {
+    sprintf("\\textcolor{%s}{%s}", color, x)
+  } else if (knitr::is_html_output()) {
+    sprintf("<span style='color: %s;'>%s</span>", color,
+      x)
+  } else x
+}
+```
+
+
+```{r, include=FALSE}
+# Set height of chunk output
+options(width = 60)
+local({
+  hook_output <- knitr::knit_hooks$get('output')
+  knitr::knit_hooks$set(output = function(x, options) {
+    if (!is.null(options$max.height)) options$attr.output <- c(
+      options$attr.output,
+      sprintf('style="max-height: %s;"', options$max.height)
+    )
+    hook_output(x, options)
+  })
+})
+```
+
+```{r, results = FALSE, echo=set_echo, message=FALSE, warning=FALSE}
+# Load packages
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(cowplot)
+library(rmarkdown)
+library(monocle3)
+library(SeuratWrappers)
+library(ggrepel)
+```
+
+<!-- Information of Used Library -->
+### `r colorize('Information of Used R Libraries', 'blue')` 
+
+The following R libraries were used to process the data and produce this report.
+
+dplyr: `r packageVersion('dplyr')`, 
+
+Seurat: `r packageVersion('Seurat')`, 
+
+patchwork: `r packageVersion('patchwork')`, 
+
+ggplot2: `r packageVersion('ggplot2')`, 
+
+cowplot: `r packageVersion('cowplot')`,
+
+Monocle3 : `r packageVersion('monocle3')`,
+
+SeuratWrappers: `r packageVersion('SeuratWrappers')`
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Useful string constant
+suffix <- "Seurat"
+sampleNames <- c("RD_VA_01", "RD_VA_02", "RD_VA_03", "RD_VA_04", "RD_VA_05", "RD_VA_06", 
+                 "RD_VA_07", "RD_VA_08", "RD_VA_09", "RD_VA_10","RD_VA_11","RD_VA_12")
+sample_Names_12 = gsub("_", "-", sampleNames)
+rawDataDir_1 <- "/projectnb/czlab/A10_Rosene/Data/20230408_combinedTwo_results/"
+rawDataDir_2 <- "/outs/filtered_feature_bc_matrix"
+projectName <- "RD_VA_01_12"
+
+
+
+# Seurat parameters
+variable.features <- 2000
+nPCs <- 50
+```
+
+<!-- # ```{r, echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- # #Visualise different cell types -->
+<!-- # data.combined <- readRDS("data_Integrated_10_samples_5_celltypes.RDS") -->
+<!-- #  -->
+<!-- # old_to_new_labels <- c( -->
+<!-- #                         "0" = "Oligodendrocyte", -->
+<!-- #                         "1" = "Neuron", -->
+<!-- #                         "2" = "Microglia", -->
+<!-- #                         "3" = "ECM", -->
+<!-- #                         "4" = "Astrocyte" -->
+<!-- #                       ) -->
+<!-- #  -->
+<!-- # # Get the current cluster identities -->
+<!-- # current_clusters <- Idents(data.combined) -->
+<!-- #  -->
+<!-- # # Map the old cluster labels to the new labels -->
+<!-- # new_cluster_ids <- plyr::mapvalues(current_clusters, from = names(old_to_new_labels), to = old_to_new_labels) -->
+<!-- #  -->
+<!-- # # Set the new cluster identities -->
+<!-- # data.combined <- SetIdent(data.combined, value = new_cluster_ids) -->
+<!-- #  -->
+<!-- # saveRDS(data.combined, file = "data_Integrated_10_samples_5_celltypes.RDS") -->
+<!-- # ``` -->
+
+
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+data.combined <- readRDS("data_Integrated_10_samples_5_celltypes.RDS")
+DimPlot(data.combined, reduction = "umap", label = TRUE, repel = TRUE, raster=FALSE)+ ggtitle('Integrated Data for 10 Samples with 5 Cell Types')
+```
+
+```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+
+data.combined <- readRDS("data_Integrated_10_samples_5_celltypes.RDS")
+Idents(data.combined) <- "seurat_5_clusters"
+
+# Find all markers 
+DefaultAssay(data.combined) <- "RNA"
+data.markers <- FindAllMarkers(data.combined, only.pos = FALSE, min.pct = 0.1, logfc.threshold = 0.1)
+
+# Save markers
+write.csv(data.markers, file='data_all_markers_10_samples_5_celltypes.csv')
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+markers <- read.csv("data_all_markers_10_samples_5_celltypes.csv")
+# Calculate the number of DEGs for each cluster
+deg_counts <- markers %>%
+  count(cluster)
+
+# Add margins to ensure labels are not cut off
+par(mar = c(5, 8, 4, 2) + 0.1)
+# Create the bar plot
+barplot(height = deg_counts$n,
+        names.arg = deg_counts$cluster,
+        horiz = TRUE,
+        las = 1, # Make cluster labels horizontal
+        xlab = "DEG Count",
+        main = "DEG Count per Cell Type",
+        col = "darkred",
+        space = 0.5, # Adjust space between bars
+        width = 0.2 # Adjust the thickness of the bars
+        )
+
+
+```
+
+```{r, results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+pdf(paste("pdf_deg_count_5_celltypes.pdf"), width=10, height=8, useDingbats = FALSE)
+# Add margins to ensure labels are not cut off
+par(mar = c(5, 8, 4, 2) + 0.1)
+# Create the bar plot
+barplot(height = deg_counts$n,
+        names.arg = deg_counts$cluster,
+        horiz = TRUE,
+        las = 1, # Make cluster labels horizontal
+        xlab = "DEG Count",
+        main = "DEG Count per Cell Type",
+        col = "darkred",
+        space = 0.5, # Adjust space between bars
+        width = 0.2 # Adjust the thickness of the bars
+        )
+dev.off()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Define the genes and their corresponding cell types
+genes <- c("GFAP", "SLC1A2", "MBP", "MOG", "Olig1", "Olig2", "PDGFRa", "DCX", 
+           "RBFOX1", "RBFOX3", "MAP2", "PLXDC2", "AIF1", "PTRRC", "Itgam", 
+           "P2RY12", "TNR", "VCAN")
+cell_types <- c("Astrocyte", "Astrocyte", "Oligodendrocyte","Oligodendrocyte", "Oligodendrocyte", 
+                "Oligodendrocyte", "Oligodendrocyte", "Neuron", "Neuron", 
+                "Neuron", "Neuron", "Microglia", "Microglia", "Microglia", 
+                "Microglia", "Microglia", "ECM", "ECM")
+
+# Create a data frame for plotting
+plot_data <- data.frame()
+gene_data
+for (i in 1:length(genes)) {
+  gene_data <- FetchData(data.combined, vars = c("ident", genes[i]))
+  gene_data$Feature <- genes[i]
+  gene_data$CellType <- cell_types[i]
+  plot_data <- rbind(plot_data, gene_data)
+}
+
+# Convert cell type to factor for ordering
+plot_data$CellType <- factor(plot_data$CellType, levels = c("Astrocyte", "Oligodendrocyte", "Neuron", "Microglia", "ECM"))
+
+# Create the violin plot
+p <- ggplot(plot_data, aes(x = ident, y = get(genes[i]), fill = CellType)) + 
+  geom_violin() + 
+  facet_wrap(~ Feature, scales = "free_y") + 
+  theme_cowplot() +
+  ylab("Expression Level") + 
+  xlab("Identity")
+
+print(p)
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pdf(paste("pdf_10_samples_5_celltypes_umap.pdf"), width=10, height=8, useDingbats = FALSE)
+DimPlot(data.combined, reduction = "umap", label = TRUE, repel = TRUE, raster=FALSE)+ ggtitle('Integrated Data for 10 Samples with 5 Cell Types')
+dev.off()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+data_markers <- read.csv("Cluster0_data_2_group_markers.csv", header=T)
+ Feature_plot = c("ST18","MBP", "MOG","CNP","CNTNAP2","MAP2","DCX","PTPRC","ITGAM","TNR","VCAN","S100B","GFAP")
+ DefaultAssay(data.combined) <- "RNA"
+```
+
+
+## Violin plot of markers for 5 Cell Types{.tabset}
+
+
+```{r, results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+ for (feature in Feature_plot) {
+   cat('###',feature,' \n')
+   print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0))
+   cat(' \n \n')
+ }
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pdf(paste("pdf_10_samples_5_celltypes_marker_violin.pdf"), width=10, height=8, useDingbats = FALSE)
+for (feature in Feature_plot) {
+   print(VlnPlot(data.combined, features = c(feature), pt.size = 0.0))
+}
+dev.off()
+```
+
+
+<!-- # ```{r, echo=FALSE, message=FALSE, warning=FALSE} -->
+<!-- # #Replace previous annotation with new annotation  -->
+<!-- # data.combined <- readRDS("Cluster0filt_data_Oligo_3_subclusters.RDS") -->
+<!-- # old_to_new_labels <- c( -->
+<!-- #                         "Oligo-1" = "Mature Oligo", -->
+<!-- #                         "Immature-Oligo" = "Immature Oligo", -->
+<!-- #                         "TBD" = "Synaptic Oligo" -->
+<!-- #                       ) -->
+<!-- #  -->
+<!-- # # Get the current cluster identities -->
+<!-- # current_clusters <- Idents(data.combined) -->
+<!-- #  -->
+<!-- # # Map the old cluster labels to the new labels -->
+<!-- # new_cluster_ids <- plyr::mapvalues(current_clusters, from = names(old_to_new_labels), to = old_to_new_labels) -->
+<!-- #  -->
+<!-- # # Set the new cluster identities -->
+<!-- # data.combined <- SetIdent(data.combined, value = new_cluster_ids) -->
+<!-- # saveRDS(data.combined, file = "Cluster0filt_data_Oligo_3_subclusters.RDS") -->
+<!-- # ``` -->
+
+
+```{r,results=FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+data.combined <- readRDS("Cluster0filt_data_Oligo_3_subclusters.RDS")
+DimPlot(data.combined, reduction = "umap")+ ggtitle('Oligodendrocyte Subcluster')
+```
+
+
+```{r, eval =FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+# Code to split existing RDS into group information for Oligo cluster0 with 3 subclusters
+
+# Load Oligo subcluster RDS to split into groups
+data.combined <- readRDS("Cluster0filt_data_Oligo_3_subclusters.RDS")
+
+# Extract the cells belonging to each cluster
+mature_oligo <- subset(data.combined, idents = "Mature Oligo")
+immature_oligo <- subset(data.combined, idents = "Immature Oligo")
+synaptic_oligo <- subset(data.combined, idents = "Synaptic Oligo")
+
+saveRDS(mature_oligo, file = "10_samples_mature_oligo.RDS")
+saveRDS(immature_oligo, file = "10_samples_immature_oligo.RDS")
+saveRDS(synaptic_oligo, file = "10_samples_synaptic_oligo.RDS")
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+data.combined <- readRDS("Cluster0filt_data_Oligo_3_subclusters.RDS")
+mature_oligo <- readRDS("10_samples_mature_oligo.RDS")
+immature_oligo <- readRDS("10_samples_immature_oligo.RDS")
+synaptic_oligo <- readRDS("10_samples_synaptic_oligo.RDS")
+```
+
+# `r colorize('UMAP Plots for 3 Oligo Subclusters', 'blue')` {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('##',"All Samples",' \n')
+DimPlot(data.combined, reduction = "umap", label = TRUE, repel = TRUE, raster=FALSE)+ ggtitle('All Samples')
+cat(' \n \n')
+cat('##',"Mature Oligo",' \n')
+DimPlot(mature_oligo, reduction = "umap", label = TRUE, repel = TRUE, raster=FALSE)+ ggtitle('Mature Oligo Subcluster')
+cat(' \n \n')
+cat('##',"Immature Oligo",' \n')
+DimPlot(immature_oligo, reduction = "umap", label = TRUE, repel = TRUE, raster=FALSE)+ ggtitle('Immature Oligo Subcluster')
+cat(' \n \n')
+cat('##',"Synaptic Oligo",' \n')
+DimPlot(synaptic_oligo, reduction = "umap", label = TRUE, repel = TRUE, raster=FALSE)+ ggtitle('Synaptic Oligo Subcluster')
+cat(' \n \n')
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pdf(paste("pdf_10_samples_5_celltypes_umap.pdf"), width=10, height=8, useDingbats = FALSE)
+DimPlot(data.combined, reduction = "umap")+ ggtitle('UMAP for Oligodendrocytes')
+dev.off()
+```
+
+
+# `r colorize('Identifying markers in Oligo Cluster', 'blue')` {.tabset}
+
+```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+
+data.combined <- readRDS("Cluster0filt_data_Oligo_3_subclusters.RDS")
+Idents(data.combined) <- "group"
+
+# Find all markers for immature oligo
+DefaultAssay(data.combined) <- "RNA"
+data.markers <- FindAllMarkers(data.combined, only.pos = FALSE, min.pct = 0, logfc.threshold = 0, return.thresh = 1)
+
+# Save markers
+write.csv(data.markers, file='data_markers_volcano_deg_oligo.csv')
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Read Markers .csv
+data.markers = read.csv('data_markers_oligo.csv')
+data.markers$pct.diff = data.markers$pct.1 - data.markers$pct.2
+data.markers$pct.ratio = data.markers$pct.1 / data.markers$pct.2
+avglog_p = data.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = avg_log2FC)
+avglog_n = data.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = avg_log2FC)
+pctdiff_p = data.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = pct.diff)
+pctdiff_n = data.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = pct.diff)
+pctratio_p = data.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = pct.ratio)
+pctratio_n = data.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = pct.ratio)
+```
+
+
+```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+
+positive.markers = read.csv('data_markers_oligo.csv')
+
+positive.markers$pct.diff = positive.markers$pct.1 - positive.markers$pct.2
+positive.markers$pct.ratio = positive.markers$pct.1 / positive.markers$pct.2
+
+# Keep positive markers only
+positive.markers <- positive.markers[positive.markers$avg_log2FC > 0.0,]
+
+positive.markers <- positive.markers %>%
+  arrange(p_val) %>%     # Arrange by p_val in ascending order
+  group_by(cluster) %>%  # Group by cluster
+  slice_head(n = 200000) # Select top 200000 rows per group
+
+write.csv(positive.markers, file='data_positive_markers_oligo.csv')
+
+```
+
+```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+paged_table(positive.markers)
+```
+
+# Positive markers for Oligo Cluster {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('##',"Top 20 Markers (avg_log2FC)",' \n')
+paged_table(avglog_p)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.diff)",' \n')
+paged_table(pctdiff_p)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.ratio)",' \n')
+paged_table(pctratio_p)
+cat(' \n \n')
+
+```
+
+
+# Negative markers for Oligo Cluster {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('##',"Top 20 Markers (avg_log2FC)",' \n')
+paged_table(avglog_n)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.diff)",' \n')
+paged_table(pctdiff_n)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.ratio)",' \n')
+paged_table(pctratio_n)
+cat(' \n \n')
+
+```
+
+
+# All markers for Oligo Cluster {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+paged_table(data.markers)
+```
+
+# `r colorize('Identifying markers in Mature Oligo subcluster', 'blue')` {.tabset}
+
+```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+
+mature_oligo <- readRDS("10_samples_mature_oligo.RDS")
+Idents(mature_oligo) <- "group"
+
+# Find all markers for mature oligo
+DefaultAssay(mature_oligo) <- "RNA"
+data.mature.markers <- FindAllMarkers(mature_oligo, only.pos = FALSE, min.pct = 0.1, logfc.threshold = 0.1, return.thresh = 1)
+
+# Save markers
+write.csv(data.mature.markers, file='data_markers_volcano_deg_mature_oligo.csv')
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Read Markers .csv
+data.mature.markers = read.csv('data_markers_mature_oligo.csv')
+data.mature.markers$pct.diff = data.mature.markers$pct.1 - data.mature.markers$pct.2
+data.mature.markers$pct.ratio = data.mature.markers$pct.1 / data.mature.markers$pct.2
+avglog_p = data.mature.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = avg_log2FC)
+avglog_n = data.mature.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = avg_log2FC)
+pctdiff_p = data.mature.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = pct.diff)
+pctdiff_n = data.mature.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = pct.diff)
+pctratio_p = data.mature.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = pct.ratio)
+pctratio_n = data.mature.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = pct.ratio)
+```
+
+
+```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+
+positive.markers.mature = read.csv('data_markers_mature_oligo.csv')
+
+positive.markers.mature$pct.diff = positive.markers.mature$pct.1 - positive.markers.mature$pct.2
+positive.markers.mature$pct.ratio = positive.markers.mature$pct.1 / positive.markers.mature$pct.2
+
+# Keep positive markers only
+positive.markers.mature <- positive.markers.mature[positive.markers.mature$avg_log2FC > 0.0,]
+
+positive.markers.mature <- positive.markers.mature %>%
+  arrange(p_val) %>%     # Arrange by p_val in ascending order
+  group_by(cluster) %>%  # Group by cluster
+  slice_head(n = 200000) # Select top 200000 rows per group
+
+write.csv(positive.markers.mature, file='data_positive_markers_mature_oligo.csv')
+
+```
+
+```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+paged_table(positive.markers.mature)
+```
+
+# Positive markers for Mature Oligo {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('##',"Top 20 Markers (avg_log2FC)",' \n')
+paged_table(avglog_p)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.diff)",' \n')
+paged_table(pctdiff_p)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.ratio)",' \n')
+paged_table(pctratio_p)
+cat(' \n \n')
+
+```
+
+
+# Negative markers for Mature Oligo {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('##',"Top 20 Markers (avg_log2FC)",' \n')
+paged_table(avglog_n)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.diff)",' \n')
+paged_table(pctdiff_n)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.ratio)",' \n')
+paged_table(pctratio_n)
+cat(' \n \n')
+
+```
+
+
+# All markers for Mature Oligo  {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+paged_table(data.mature.markers)
+```
+
+
+# `r colorize('Identifying markers in Immature Oligo subcluster', 'blue')` {.tabset}
+
+```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+
+immature_oligo <- readRDS("10_samples_immature_oligo.RDS")
+Idents(immature_oligo) <- "group"
+
+# Find all markers for immature oligo
+DefaultAssay(immature_oligo) <- "RNA"
+data.immature.markers <- FindAllMarkers(immature_oligo, only.pos = FALSE, min.pct = 0.1, logfc.threshold = 0.1, return.thresh = 1)
+
+# Save markers
+write.csv(data.immature.markers, file='data_markers_volcano_deg_immature_oligo.csv')
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Read Markers .csv
+data.immature.markers = read.csv('data_markers_immature_oligo.csv')
+data.immature.markers$pct.diff = data.immature.markers$pct.1 - data.immature.markers$pct.2
+data.immature.markers$pct.ratio = data.immature.markers$pct.1 / data.immature.markers$pct.2
+avglog_p = data.immature.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = avg_log2FC)
+avglog_n = data.immature.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = avg_log2FC)
+pctdiff_p = data.immature.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = pct.diff)
+pctdiff_n = data.immature.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = pct.diff)
+pctratio_p = data.immature.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = pct.ratio)
+pctratio_n = data.immature.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = pct.ratio)
+```
+
+
+```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+
+positive.markers.immature = read.csv('data_markers_immature_oligo.csv')
+
+positive.markers.immature$pct.diff = positive.markers.immature$pct.1 - positive.markers.immature$pct.2
+positive.markers.immature$pct.ratio = positive.markers.immature$pct.1 / positive.markers.immature$pct.2
+
+# Keep positive markers only
+positive.markers.immature <- positive.markers.immature[positive.markers.immature$avg_log2FC > 0.0,]
+
+positive.markers.immature <- positive.markers.immature %>%
+  arrange(p_val) %>%     # Arrange by p_val in ascending order
+  group_by(cluster) %>%  # Group by cluster
+  slice_head(n = 200000) # Select top 200000 rows per group
+
+write.csv(positive.markers.immature, file='data_positive_markers_immature_oligo.csv')
+
+```
+
+```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+paged_table(positive.markers.immature)
+```
+
+# Positive markers for Immature Oligo {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('##',"Top 20 Markers (avg_log2FC)",' \n')
+paged_table(avglog_p)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.diff)",' \n')
+paged_table(pctdiff_p)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.ratio)",' \n')
+paged_table(pctratio_p)
+cat(' \n \n')
+
+```
+
+
+# Negative markers for Immature Oligo {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('##',"Top 20 Markers (avg_log2FC)",' \n')
+paged_table(avglog_n)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.diff)",' \n')
+paged_table(pctdiff_n)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.ratio)",' \n')
+paged_table(pctratio_n)
+cat(' \n \n')
+
+```
+
+
+# All markers for Immature Oligo  {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+paged_table(data.immature.markers)
+```
+
+# `r colorize('Identifying markers in Synaptic Oligo subcluster', 'blue')` {.tabset}
+
+```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+
+synaptic_oligo <- readRDS("10_samples_synaptic_oligo.RDS")
+Idents(synaptic_oligo) <- "group"
+
+# Find all markers for immature oligo
+DefaultAssay(synaptic_oligo) <- "RNA"
+data.synaptic.markers <- FindAllMarkers(synaptic_oligo, only.pos = FALSE, min.pct = 0.1, logfc.threshold = 0.1, return.thresh = 1)
+
+# Save markers
+write.csv(data.synaptic.markers, file='data_markers_volcano_deg_synaptic_oligo.csv')
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Read Markers .csv
+data.synaptic.markers = read.csv('data_markers_synaptic_oligo.csv')
+data.synaptic.markers$pct.diff = data.synaptic.markers$pct.1 - data.synaptic.markers$pct.2
+data.synaptic.markers$pct.ratio = data.synaptic.markers$pct.1 / data.synaptic.markers$pct.2
+avglog_p = data.synaptic.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = avg_log2FC)
+avglog_n = data.synaptic.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = avg_log2FC)
+pctdiff_p = data.synaptic.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = pct.diff)
+pctdiff_n = data.synaptic.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = pct.diff)
+pctratio_p = data.synaptic.markers %>% group_by(cluster) %>% slice_max(n = 20, order_by = pct.ratio)
+pctratio_n = data.synaptic.markers %>% group_by(cluster) %>% slice_min(n = 20, order_by = pct.ratio)
+```
+
+
+```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+
+positive.markers.synaptic = read.csv('data_markers_synaptic_oligo.csv')
+
+positive.markers.synaptic$pct.diff = positive.markers.synaptic$pct.1 - positive.markers.synaptic$pct.2
+positive.markers.synaptic$pct.ratio = positive.markers.synaptic$pct.1 / positive.markers.synaptic$pct.2
+
+# Keep positive markers only
+positive.markers.synaptic <- positive.markers.synaptic[positive.markers.synaptic$avg_log2FC > 0.0,]
+
+positive.markers.synaptic <- positive.markers.synaptic %>%
+  arrange(p_val) %>%     # Arrange by p_val in ascending order
+  group_by(cluster) %>%  # Group by cluster
+  slice_head(n = 200000) # Select top 200000 rows per group
+
+write.csv(positive.markers.synaptic, file='data_positive_markers_synaptic_oligo.csv')
+
+```
+
+```{r, eval = FALSE, echo=FALSE, message=FALSE, warning=FALSE}
+paged_table(positive.markers.synaptic)
+```
+
+# Positive markers for Synaptic Oligo {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('##',"Top 20 Markers (avg_log2FC)",' \n')
+paged_table(avglog_p)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.diff)",' \n')
+paged_table(pctdiff_p)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.ratio)",' \n')
+paged_table(pctratio_p)
+cat(' \n \n')
+
+```
+
+
+# Negative markers for Synaptic Oligo {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+cat('##',"Top 20 Markers (avg_log2FC)",' \n')
+paged_table(avglog_n)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.diff)",' \n')
+paged_table(pctdiff_n)
+cat(' \n \n')
+cat('##',"Top 20 Markers (pct.ratio)",' \n')
+paged_table(pctratio_n)
+cat(' \n \n')
+
+```
+
+
+# All markers for Synaptic Oligo  {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+paged_table(data.synaptic.markers)
+```
+
+# `r colorize('Dot Plots of Top 30 markers for 3 different Oligo Subclusters', 'blue')` {.tabset}
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Dot plot for oligo cluster
+
+#load subset data
+data.combined <- readRDS("Cluster0filt_data_Oligo_3_subclusters.RDS")
+Idents(data.combined) <- "group"
+
+# Read positive marker data
+data.markers <- read.csv("data_markers_oligo.csv")
+
+# Group by cluster and select top 30 markers based on avg_log2FC for one condition
+top_markers <- data.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 30, order_by = avg_log2FC) %>%
+  ungroup()
+
+# Sort the genes for each condition for the dotplot
+top_markers_sorted <- top_markers %>%
+  arrange(cluster, desc(avg_log2FC))
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#load subset data
+#data.combined <- readRDS("Cluster0filt_data_Oligo_3_subclusters.RDS")
+DefaultAssay(data.combined) <- "RNA"
+
+# Create a list to store dot plots
+dot_plots <- list()
+
+
+# Loop over each condition to create dot plots
+for (cond in unique(top_markers$cluster)) {
+  # Extract top genes for the current condition
+  genes <- top_markers_sorted$gene[top_markers_sorted$cluster == cond]
+
+  # Create dot plot for current condition
+  dot_plot <- DotPlot(object = data.combined,
+                      features = genes,
+                      dot.scale = 7) +
+              RotatedAxis() +
+              theme(axis.text.y = element_text(size = 8),
+                    axis.text.x = element_text(size = 8)) +
+              labs(title = paste("Oligo Cluster Markers",cond)) +
+              scale_colour_gradient2(low = "white",mid="darkgrey", high = "darkblue")
+
+  # Store the dot plot in the list
+  dot_plots[[paste(cond)]] <- dot_plot
+}
+print(dot_plots)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Dot plot for mature oligo
+#load subset data
+#mature_oligo <- readRDS("10_samples_mature_oligo.RDS")
+Idents(mature_oligo) <- "group"
+
+# Read positive marker data
+data.mature.markers <- read.csv("data_markers_mature_oligo.csv")
+
+# Group by cluster and select top 30 markers based on avg_log2FC for one condition
+top_markers_mature <- data.mature.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 30, order_by = avg_log2FC) %>%
+  ungroup()
+
+# Sort the genes for each condition for the dotplot
+top_markers_mature_sorted <- top_markers_mature %>%
+  arrange(cluster, desc(avg_log2FC))
+
+```
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#load subset data
+#mature_oligo <- readRDS("10_samples_mature_oligo.RDS")
+DefaultAssay(mature_oligo) <- "RNA"
+
+# Create a list to store dot plots
+mature_dot_plots <- list()
+
+
+# Loop over each condition to create dot plots
+for (cond in unique(top_markers_mature$cluster)) {
+  # Extract top genes for the current condition
+  genes <- top_markers_mature_sorted$gene[top_markers_mature_sorted$cluster == cond]
+
+  # Create dot plot for current condition
+  mature_dot_plot <- DotPlot(object = mature_oligo,
+                      features = genes,
+                      dot.scale = 7) +
+              RotatedAxis() +
+              theme(axis.text.y = element_text(size = 8),
+                    axis.text.x = element_text(size = 8)) +
+              labs(title = paste("Mature Oligo Markers",cond)) +
+              scale_colour_gradient2(low = "white",mid="darkgrey", high = "darkblue")
+
+  # Store the dot plot in the list
+  mature_dot_plots[[paste(cond)]] <- mature_dot_plot
+}
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Dot plot for immature oligo
+
+#load subset data
+#immature_oligo <- readRDS("10_samples_immature_oligo.RDS")
+Idents(immature_oligo) <- "group"
+
+# Read positive marker data
+data.immature.markers <- read.csv("data_markers_immature_oligo.csv")
+
+# Group by cluster and select top 30 markers based on avg_log2FC for one condition
+top_markers_immature <- data.immature.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 30, order_by = avg_log2FC) %>%
+  ungroup()
+
+# Sort the genes for each condition for the dotplot
+top_markers_immature_sorted <- top_markers_immature %>%
+  arrange(cluster, desc(avg_log2FC))
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#load subset data
+#immature_oligo <- readRDS("10_samples_immature_oligo.RDS")
+DefaultAssay(immature_oligo) <- "RNA"
+
+# Create a list to store dot plots
+immature_dot_plots <- list()
+
+
+# Loop over each condition to create dot plots
+for (cond in unique(top_markers_immature$cluster)) {
+  # Extract top genes for the current condition
+  genes <- top_markers_immature_sorted$gene[top_markers_immature_sorted$cluster == cond]
+
+  # Create dot plot for current condition
+  immature_dot_plot <- DotPlot(object = immature_oligo,
+                      features = genes,
+                      dot.scale = 7) +
+              RotatedAxis() +
+              theme(axis.text.y = element_text(size = 8),
+                    axis.text.x = element_text(size = 8)) +
+              labs(title = paste("Immature Oligo Markers",cond)) +
+              scale_colour_gradient2(low = "white",mid="darkgrey", high = "darkblue")
+
+  # Store the dot plot in the list
+  immature_dot_plots[[paste(cond)]] <- immature_dot_plot
+}
+
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Dot plot for synaptic oligo
+
+#load subset data
+#synaptic_oligo <- readRDS("10_samples_synaptic_oligo.RDS")
+Idents(synaptic_oligo) <- "group"
+
+# Read positive marker data
+data.synaptic.markers <- read.csv("data_markers_synaptic_oligo.csv")
+
+# Group by cluster and select top 30 markers based on avg_log2FC for one condition
+top_markers_synaptic <- data.synaptic.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 30, order_by = avg_log2FC) %>%
+  ungroup()
+
+# Sort the genes for each condition for the dotplot
+top_markers_synaptic_sorted <- top_markers_synaptic %>%
+  arrange(cluster, desc(avg_log2FC))
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#load subset data
+#synaptic_oligo <- readRDS("10_samples_synaptic_oligo.RDS")
+DefaultAssay(synaptic_oligo) <- "RNA"
+
+# Create a list to store dot plots
+synaptic_dot_plots <- list()
+
+
+# Loop over each condition to create dot plots
+for (cond in unique(top_markers_synaptic$cluster)) {
+  # Extract top genes for the current condition
+  genes <- top_markers_synaptic_sorted$gene[top_markers_synaptic_sorted$cluster == cond]
+
+  # Create dot plot for current condition
+  synaptic_dot_plot <- DotPlot(object = synaptic_oligo,
+                      features = genes,
+                      dot.scale = 7) +
+              RotatedAxis() +
+              theme(axis.text.y = element_text(size = 8),
+                    axis.text.x = element_text(size = 8)) +
+              labs(title = paste("Synaptic Oligo Markers",cond)) +
+              scale_colour_gradient2(low = "white",mid="darkgrey", high = "darkblue")
+
+  # Store the dot plot in the list
+  synaptic_dot_plots[[paste(cond)]] <- synaptic_dot_plot
+}
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+#Dot plot for oligo subcluster based on cell type
+
+data.combined <- readRDS("Cluster0filt_data_Oligo_3_subclusters.RDS")
+
+# Read positive marker data
+data.markers <- read.csv("Cluster0filt_data_all_markers_for_oligo_3_subclusters.csv")
+
+
+# Rename cluster values
+data.markers <- data.markers %>%
+  mutate(cluster = case_when(
+    cluster == "Oligo-1" ~ "Mature Oligodendrocyte",
+    cluster == "TBD" ~ "Synaptic Oligodendrocyte",
+    cluster == "Immature-Oligo" ~ "Immature Oligodendrocyte",
+    TRUE ~ cluster
+  ))
+
+gene_list = c("THSD7A","GSN", "SGCZ", "TANC2", "THSD7B", "CTNND2", "CADM2", "PALM2AKAP2", "ERBB4", "KCNH8", "KANK1", "CNTN1", "NLGN1", "GRIK2")
+
+#Idents(data.combined) <- factor(data.combined@active.ident, sort(levels(data.combined@active.ident)))
+
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Create the DotPlot for the specified markers
+DotPlot(object = data.combined, features = gene_list, dot.scale = 7) +
+              RotatedAxis() +
+              theme(axis.text.y = element_text(size = 8),
+                    axis.text.x = element_text(size = 8)) +
+              labs(title = paste("Markers for Oligo Subcluster"))
+```
+
+
+
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+# Print all dot plots
+cat('##',"All Samples",' \n')
+print(dot_plots)
+cat('\n \n')
+cat('##',"Mature Oligo",' \n')
+print(mature_dot_plots)
+cat('\n \n')
+cat('##',"Immature Oligo",' \n')
+print(immature_dot_plots)
+cat('\n \n')
+cat('##',"Synaptic Oligo",' \n')
+print(synaptic_dot_plots)
+cat('\n \n')
+```
+
+
+# `r colorize('Volcano plot for DEGs for 3 different Oligo Subclusters', 'blue')` {.tabset}
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+
+# Read the DEGs from the CSV files
+de <- read.csv('data_markers_volcano_deg_oligo.csv')
+# List of oligo types
+types <- c("CR")
+
+de<- subset(de, cluster=="CR")
+de$diffexpressed <- "NO"
+
+de$diffexpressed[de$avg_log2FC < -0.25 & de$p_val < 0.05] <- "DOWN"
+de$diffexpressed[de$avg_log2FC > 0.25 & de$p_val < 0.05] <- "UP"
+
+subset_df <- de[complete.cases(de[, "gene"]), ]
+
+c1 <- subset_df[subset_df[, "avg_log2FC"] > 0 & subset_df[, "p_val"] <0.05, ] # condition 1
+c2 <- subset_df[subset_df[, "avg_log2FC"] < 0 & subset_df[, "p_val"] <0.05, ] # condition 2
+c1_byavg_log2FC <- c1[order(c1$avg_log2FC,decreasing = TRUE),]
+c2_byavg_log2FC <- c2[order(c2$avg_log2FC,decreasing = FALSE),]
+c1_top10 <- head(c1_byavg_log2FC, 10)$gene
+c2_top10 <- head(c2_byavg_log2FC, 10)$gene
+labeled_proteins <- c(c1_top10, c2_top10)
+de$delabel <- ifelse(de$gene %in% labeled_proteins & de$diffexpressed %in% c("UP", "DOWN"), de$X, NA)
+
+volcanoplot <- function() {
+
+  ggplot(data = de, aes(x = avg_log2FC, y = -log10(p_val), col = diffexpressed, label = delabel)) +
+  geom_vline(xintercept = c(-0.25, 0.25), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+    geom_point(data = de %>% filter(diffexpressed == "DOWN"), color = "#00AFBB",size=0.8, alpha=0.5) +
+    geom_point(data = de %>% filter(diffexpressed == "UP"), color = "#bb0c00",size=0.8, alpha=0.5) +
+    geom_point(data = de %>% filter(diffexpressed == "NO"), color = "gray",size=0.8, alpha=0.5) +
+    geom_text_repel(min.segment.length = 0, size = 2, max.overlaps = Inf, show.legend = F,) +
+  scale_color_manual(values = c("DOWN" = "black", "UP" =  "black")) +#, limits= c("UP in zero-Trp", "UP in high-Trp")) + # to set the colours of our variable
+                     # labels = c("UP in zero-Trp", "Not significant", "UP in high-Trp")) + # to set the labels in case we want to overwrite the categories from the dataframe (UP, DOWN, NO)
+  guides(color = guide_legend(title = NULL))+
+    coord_cartesian(xlim = c(-2, 2)) + # set limits
+  labs(#color = 'Differential Expression', #legend_title
+       x = expression("Upregulated in CONTROL <- avg log"[2]*"FC -> Upregulated in CR"), y = expression("-log"[10]*"p-value")) + 
+  scale_x_continuous(breaks = seq(-10, 10, 1)) + # to customize the breaks in the x axis
+  ggtitle(paste0('DEGs in Oligo Subcluster CR vs CONTROL')) + # Plot title 
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text=element_text(size=16))
+  
+}
+
+oligo_volcano_plots <- volcanoplot() + theme(legend.position = "none")
+print(oligo_volcano_plots)
+```
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+
+# Read the DEGs from the CSV files
+de <- read.csv('data_markers_volcano_deg_mature_oligo.csv')
+# List of oligo types
+types <- c("CR")
+
+de<- subset(de, cluster=="CR")
+de$diffexpressed <- "NO"
+
+de$diffexpressed[de$avg_log2FC < -0.25 & de$p_val < 0.05] <- "DOWN"
+de$diffexpressed[de$avg_log2FC > 0.25 & de$p_val < 0.05] <- "UP"
+
+subset_df <- de[complete.cases(de[, "gene"]), ]
+
+c1 <- subset_df[subset_df[, "avg_log2FC"] > 0 & subset_df[, "p_val"] <0.05, ] # condition 1
+c2 <- subset_df[subset_df[, "avg_log2FC"] < 0 & subset_df[, "p_val"] <0.05, ] # condition 2
+c1_byavg_log2FC <- c1[order(c1$avg_log2FC,decreasing = TRUE),]
+c2_byavg_log2FC <- c2[order(c2$avg_log2FC,decreasing = FALSE),]
+c1_top10 <- head(c1_byavg_log2FC, 10)$gene
+c2_top10 <- head(c2_byavg_log2FC, 10)$gene
+labeled_proteins <- c(c1_top10, c2_top10)
+de$delabel <- ifelse(de$gene %in% labeled_proteins & de$diffexpressed %in% c("UP", "DOWN"), de$X, NA)
+
+volcanoplot <- function() {
+
+  ggplot(data = de, aes(x = avg_log2FC, y = -log10(p_val), col = diffexpressed, label = delabel)) +
+  geom_vline(xintercept = c(-0.25, 0.25), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+    geom_point(data = de %>% filter(diffexpressed == "DOWN"), color = "#00AFBB",size=0.8, alpha=0.5) +
+    geom_point(data = de %>% filter(diffexpressed == "UP"), color = "#bb0c00",size=0.8, alpha=0.5) +
+    geom_point(data = de %>% filter(diffexpressed == "NO"), color = "gray",size=0.8, alpha=0.5) +
+    geom_text_repel(min.segment.length = 0, size = 2, max.overlaps = Inf, show.legend = F,) +
+  scale_color_manual(values = c("DOWN" = "black", "UP" =  "black")) +#, limits= c("UP in zero-Trp", "UP in high-Trp")) + # to set the colours of our variable
+                     # labels = c("UP in zero-Trp", "Not significant", "UP in high-Trp")) + # to set the labels in case we want to overwrite the categories from the dataframe (UP, DOWN, NO)
+  guides(color = guide_legend(title = NULL))+
+    coord_cartesian(xlim = c(-2, 2)) + # set limits
+  labs(#color = 'Differential Expression', #legend_title
+       x = expression("Upregulated in CONTROL <- avg log"[2]*"FC -> Upregulated in CR"), y = expression("-log"[10]*"p-value")) + 
+  scale_x_continuous(breaks = seq(-10, 10, 1)) + # to customize the breaks in the x axis
+  ggtitle(paste0('DEGs in Mature Oligo Subcluster CR vs CONTROL')) + # Plot title 
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text=element_text(size=16))
+  
+}
+
+mature_volcano_plots <- volcanoplot() + theme(legend.position = "none")
+print(mature_volcano_plots)
+```
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+
+# Read the DEGs from the CSV files
+de <- read.csv('data_markers_volcano_deg_immature_oligo.csv')
+# List of oligo types
+types <- c("CR")
+
+de<- subset(de, cluster=="CR")
+de$diffexpressed <- "NO"
+
+de$diffexpressed[de$avg_log2FC < -0.25 & de$p_val < 0.05] <- "DOWN"
+de$diffexpressed[de$avg_log2FC > 0.25 & de$p_val < 0.05] <- "UP"
+
+subset_df <- de[complete.cases(de[, "gene"]), ]
+
+c1 <- subset_df[subset_df[, "avg_log2FC"] > 0 & subset_df[, "p_val"] <0.05, ] # condition 1
+c2 <- subset_df[subset_df[, "avg_log2FC"] < 0 & subset_df[, "p_val"] <0.05, ] # condition 2
+c1_byavg_log2FC <- c1[order(c1$avg_log2FC,decreasing = TRUE),]
+c2_byavg_log2FC <- c2[order(c2$avg_log2FC,decreasing = FALSE),]
+c1_top10 <- head(c1_byavg_log2FC, 10)$gene
+c2_top10 <- head(c2_byavg_log2FC, 10)$gene
+labeled_proteins <- c(c1_top10, c2_top10)
+de$delabel <- ifelse(de$gene %in% labeled_proteins & de$diffexpressed %in% c("UP", "DOWN"), de$X, NA)
+
+volcanoplot <- function() {
+
+  ggplot(data = de, aes(x = avg_log2FC, y = -log10(p_val), col = diffexpressed, label = delabel)) +
+  geom_vline(xintercept = c(-0.25, 0.25), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+    geom_point(data = de %>% filter(diffexpressed == "DOWN"), color = "#00AFBB",size=0.8, alpha=0.5) +
+    geom_point(data = de %>% filter(diffexpressed == "UP"), color = "#bb0c00",size=0.8, alpha=0.5) +
+    geom_point(data = de %>% filter(diffexpressed == "NO"), color = "gray",size=0.8, alpha=0.5) +
+    geom_text_repel(min.segment.length = 0, size = 2, max.overlaps = Inf, show.legend = F,) +
+  scale_color_manual(values = c("DOWN" = "black", "UP" =  "black")) +#, limits= c("UP in zero-Trp", "UP in high-Trp")) + # to set the colours of our variable
+                     # labels = c("UP in zero-Trp", "Not significant", "UP in high-Trp")) + # to set the labels in case we want to overwrite the categories from the dataframe (UP, DOWN, NO)
+  guides(color = guide_legend(title = NULL))+
+    coord_cartesian(xlim = c(-2, 2)) + # set limits
+  labs(#color = 'Differential Expression', #legend_title
+       x = expression("Upregulated in CONTROL <- avg log"[2]*"FC -> Upregulated in CR"), y = expression("-log"[10]*"p-value")) + 
+  scale_x_continuous(breaks = seq(-10, 10, 1)) + # to customize the breaks in the x axis
+  ggtitle(paste0('DEGs in Immature Oligo Subcluster CR vs CONTROL')) + # Plot title 
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text=element_text(size=16))
+  
+}
+
+immature_volcano_plots <- volcanoplot() + theme(legend.position = "none")
+print(immature_volcano_plots)
+```
+
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+
+# Read the DEGs from the CSV files
+de <- read.csv('data_markers_volcano_deg_synaptic_oligo.csv')
+# List of oligo types
+types <- c("CR")
+
+de<- subset(de, cluster=="CR")
+de$diffexpressed <- "NO"
+
+de$diffexpressed[de$avg_log2FC < -0.25 & de$p_val < 0.05] <- "DOWN"
+de$diffexpressed[de$avg_log2FC > 0.25 & de$p_val < 0.05] <- "UP"
+
+subset_df <- de[complete.cases(de[, "gene"]), ]
+
+c1 <- subset_df[subset_df[, "avg_log2FC"] > 0 & subset_df[, "p_val"] <0.05, ] # condition 1
+c2 <- subset_df[subset_df[, "avg_log2FC"] < 0 & subset_df[, "p_val"] <0.05, ] # condition 2
+c1_byavg_log2FC <- c1[order(c1$avg_log2FC,decreasing = TRUE),]
+c2_byavg_log2FC <- c2[order(c2$avg_log2FC,decreasing = FALSE),]
+c1_top10 <- head(c1_byavg_log2FC, 10)$gene
+c2_top10 <- head(c2_byavg_log2FC, 10)$gene
+labeled_proteins <- c(c1_top10, c2_top10)
+de$delabel <- ifelse(de$gene %in% labeled_proteins & de$diffexpressed %in% c("UP", "DOWN"), de$X, NA)
+
+volcanoplot <- function() {
+
+  ggplot(data = de, aes(x = avg_log2FC, y = -log10(p_val), col = diffexpressed, label = delabel)) +
+  geom_vline(xintercept = c(-0.25, 0.25), col = "gray", linetype = 'dashed') +
+  geom_hline(yintercept = -log10(0.05), col = "gray", linetype = 'dashed') + 
+    geom_point(data = de %>% filter(diffexpressed == "DOWN"), color = "#00AFBB",size=0.8, alpha=0.5) +
+    geom_point(data = de %>% filter(diffexpressed == "UP"), color = "#bb0c00",size=0.8, alpha=0.5) +
+    geom_point(data = de %>% filter(diffexpressed == "NO"), color = "gray",size=0.8, alpha=0.5) +
+    geom_text_repel(min.segment.length = 0, size = 2, max.overlaps = Inf, show.legend = F,) +
+  scale_color_manual(values = c("DOWN" = "black", "UP" =  "black")) +#, limits= c("UP in zero-Trp", "UP in high-Trp")) + # to set the colours of our variable
+                     # labels = c("UP in zero-Trp", "Not significant", "UP in high-Trp")) + # to set the labels in case we want to overwrite the categories from the dataframe (UP, DOWN, NO)
+  guides(color = guide_legend(title = NULL))+
+    coord_cartesian(xlim = c(-2, 2)) + # set limits
+  labs(#color = 'Differential Expression', #legend_title
+       x = expression("Upregulated in CONTROL <- avg log"[2]*"FC -> Upregulated in CR"), y = expression("-log"[10]*"p-value")) + 
+  scale_x_continuous(breaks = seq(-10, 10, 1)) + # to customize the breaks in the x axis
+  ggtitle(paste0('DEGs in Synaptic Oligo Subcluster CR vs CONTROL')) + # Plot title 
+  theme_bw() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.text=element_text(size=16))
+  
+}
+
+synaptic_volcano_plots <- volcanoplot() + theme(legend.position = "none")
+print(synaptic_volcano_plots)
+```
+
+```{r,results='asis', echo=FALSE, message=FALSE, warning=FALSE}
+# Print all volcano plots
+cat('##',"Oligo Cluster",' \n')
+print(oligo_volcano_plots)
+cat('\n \n')
+cat('##',"Mature Oligo",' \n')
+print(mature_volcano_plots)
+cat('\n \n')
+cat('##',"Immature Oligo",' \n')
+print(immature_volcano_plots)
+cat('\n \n')
+cat('##',"Synaptic Oligo",' \n')
+print(synaptic_volcano_plots)
+cat('\n \n')
+```
+
+
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pdf(paste("pdf_group_oligo_dot_plots.pdf"), width=10, height=8, useDingbats = FALSE)
+print(dot_plots)
+dev.off()
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pdf(paste("pdf_mature_oligo_dot_plots.pdf"), width=10, height=8, useDingbats = FALSE)
+print(mature_dot_plots)
+dev.off()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pdf(paste("pdf_immature_oligo_dot_plots.pdf"), width=10, height=8, useDingbats = FALSE)
+print(immature_dot_plots)
+dev.off()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pdf(paste("pdf_synaptic_oligo_dot_plots.pdf"), width=10, height=8, useDingbats = FALSE)
+print(synaptic_dot_plots)
+dev.off()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pdf(paste("pdf_oligo_deg_volcano_plots.pdf"), width=10, height=8, useDingbats = FALSE)
+print(oligo_volcano_plots)
+dev.off()
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pdf(paste("pdf_oligo_3_subclusters_deg_volcano_plots.pdf"), width=10, height=8, useDingbats = FALSE)
+print(mature_volcano_plots)
+print(immature_volcano_plots)
+print(synaptic_volcano_plots)
+dev.off()
+```
+
+
+# `r colorize('Count percentage of cells in each cluster', 'blue')`
+
+We here count the percentage of cells in each cluster and plot it. The percentage of cells in each cluster is calculated sample by sample and also group by group.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+data.combined <- readRDS("data_Integrated_10_samples_5_celltypes.RDS")
+countsBySample <- data.frame(unclass(table(data.combined@active.ident, data.combined@meta.data$sample)))
+countsBySample$CR <- countsBySample$RD.VA.01 + countsBySample$RD.VA.08 + countsBySample$RD.VA.11 + countsBySample$RD.VA.12
+countsBySample$CONTROL <- (countsBySample$RD.VA.02 + countsBySample$RD.VA.03 + countsBySample$RD.VA.05 + countsBySample$RD.VA.07 + countsBySample$RD.VA.09 + countsBySample$RD.VA.10 )
+perBySample <- t(t(countsBySample)/colSums(countsBySample))
+```
+
+## Table of percentage of cells in each cluster.
+
+The row index is cluster and the column header is sample name. All samples are split into two groups "CR" and "CONTROL", where "CR" contains the set of samples {RD-VA-01, RD-VA-08, RD-VA-11, RD-VA-12}(note that we removed RD-VA-04 and RD-VA-06), "CONTROL" contains the set of samples {RD-VA-02, RD-VA-03, RD-VA-05, RD-VA-07, RD-VA-09, RD-VA-10}.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+mmm = data.frame(perBySample)
+ paged_table(mmm)
+```
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+color12 = c("skyblue4","orange3", "skyblue1","red", "azure2", "pink", "palegreen", "violet","grey60", "gold","purple","tomato")
+
+color10 = c("gold", "orange", "orange3","orange4","skyblue1","skyblue2","skyblue3","skyblue4","slategray","grey60")
+
+sample10 = gsub("_", "-", c("RD_VA_01", "RD_VA_08","RD_VA_11","RD_VA_12","RD_VA_02", "RD_VA_03","RD_VA_05",
+                            "RD_VA_07",  "RD_VA_09", "RD_VA_10"))
+```
+
+
+```{r, eval=set_eval, echo=FALSE, message=FALSE, warning=FALSE}
+pdf(paste("pdf_cell_percentage_top_5_clusters_by_all_12_samples.pdf",sep=''), width=4, height=8, useDingbats = FALSE)
+par(mar=c(3, 3, 2, 2))
+barplot(t(perBySample[,c(1,2,3,4,5,6,7,8,9,10,11,12)]), beside = T, col=color12, horiz = T, las = 1, xlim=c(0,1.0))
+legend("bottomright", legend = sample_Names_12, box.lty=0, inset=c(0,0.5), col=color12, fill=color12)
+# barplot(t(perBySample[,c(2,4)]), beside = T, col=c("lightblue", "orange"), horiz = T, las = 1, xlim=c(0,0.5))
+# legend("bottomright", legend = c("LN", "RN"), box.lty=0, inset=c(0,0.1), col=c("lightblue", "orange"), fill=c("lightblue", "orange"))
+dev.off()
+
+pdf(paste("pdf_cell_percentage_top_5_clusters_by_samples.pdf",sep=''), width=4, height=8, useDingbats = FALSE)
+par(mar=c(3, 3, 2, 2))
+barplot(t(perBySample[,c(1,8,11,12,2,3,5,7,9,10)]), beside = T, col=color10, horiz = T, las = 1, xlim=c(0,1.0))
+legend("bottomright", legend = sample10, box.lty=0, inset=c(0,0.5), col=color10, fill=color10)
+# barplot(t(perBySample[,c(2,4)]), beside = T, col=c("lightblue", "orange"), horiz = T, las = 1, xlim=c(0,0.5))
+# legend("bottomright", legend = c("LN", "RN"), box.lty=0, inset=c(0,0.1), col=c("lightblue", "orange"), fill=c("lightblue", "orange"))
+dev.off()
+```
+
+## Plot percentage of cells {.tabset}
+
+### Two Groups
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+group_list = c("CR","CONTROL")
+ par(mar=c(2, 8, 1, 2))
+ barplot(t(perBySample[,group_list]), beside = T, col=c("lightblue", "orange"), horiz = T, las = 1, xlim=c(0,1.0))
+ legend("bottomright", legend = c("CR", "CONTROL"), box.lty=0, inset=c(0,0.5), col=c("lightblue", "orange"), fill=c("lightblue", "orange"))
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+pdf(paste("pdf_cell_composition_top_5_clusters_by_groups.pdf",sep=''), width=8, height=8, useDingbats = FALSE)
+group_list = c("CR","CONTROL")
+ par(mar=c(2, 8, 1, 2))
+ barplot(t(perBySample[,group_list]), beside = T, col=c("lightblue", "orange"), horiz = T, las = 1, xlim=c(0,1.0))
+ legend("bottomright", legend = c("CR", "CONTROL"), box.lty=0, inset=c(0,0.5), col=c("lightblue", "orange"), fill=c("lightblue", "orange"))
+dev.off()
+```
